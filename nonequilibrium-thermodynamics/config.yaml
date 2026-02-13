@@ -1,0 +1,9 @@
+dataset:
+  description: The dataset to use for training
+  type: str
+  value: "MNIST"
+
+_batchsize:
+  description: The batch size to use for the dataloader
+  type: int
+  value: 64

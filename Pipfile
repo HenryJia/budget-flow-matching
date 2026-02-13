@@ -8,7 +8,9 @@ numpy = "*"
 scipy = "*"
 pandas = "*"
 torch = "*"
+torchvision = "*"
 lightning = "*"
+wandb = "*"
 
 
 [requires]
