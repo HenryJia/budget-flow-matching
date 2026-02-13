@@ -1,0 +1,17 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[packages]
+numpy = "*"
+scipy = "*"
+pandas = "*"
+torch = "*"
+lightning = "*"
+
+
+[requires]
+python_version = "3.14"
+
+[dev-packages]
