@@ -7,7 +7,7 @@ import torchvision as tv
 import torch.nn.functional as F
 
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import WandbLogger
 
 from model import DiffusionModel
@@ -19,13 +19,16 @@ def main(args):
     with wandb.init(config=args.config, project="nonequilibrium-thermodynamics") as run:
         if run.config['dataset'] == "MNIST":
             dataset = tv.datasets.MNIST(root="./data", download=True, transform=tv.transforms.ToTensor())
+            input_dim = (28, 28)
+            input_channels = 1
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
         dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=8)
 
         model = DiffusionModel(
-            input_channels=run.config['input_channels'],
+            input_dim=input_dim,
+            input_channels=input_channels,
             layers=run.config['layers'],
             hidden_channels=run.config['hidden_channels'],
             trajectory_length=run.config['trajectory_length'],
@@ -42,12 +45,13 @@ def main(args):
             mode="min"
             )
         sample_callback = SampleCallback(num_samples=16)
+        lr_monitor = LearningRateMonitor(logging_interval='step')
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor],
             )
         trainer.fit(model, dataloader)
 

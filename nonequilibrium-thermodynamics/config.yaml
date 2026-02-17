@@ -18,11 +18,6 @@ gpus:
   type: int
   value: 2
 
-input_channels:
-  description: The number of input channels for the model
-  type: int
-  value: 1
-
 layers:
   description: The number of layers in the model
   type: int

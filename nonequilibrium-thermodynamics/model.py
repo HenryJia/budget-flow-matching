@@ -7,16 +7,25 @@ import lightning as L
 
 
 class MultiBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, input_dim, in_channels, out_channels):
         super(MultiBlock, self).__init__()
         self.conv5 = nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2)
         self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
         self.convt = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=6, stride=2, padding=2)
         self.conv1 = nn.Conv2d(out_channels*3, out_channels, kernel_size=1, padding=0)
+        self.dense = nn.Sequential(
+            nn.Linear(input_dim[0]//2 * input_dim[1]//2 * in_channels, out_channels),
+            nn.LeakyReLU(),
+            nn.Linear(out_channels, out_channels * input_dim[0]//2 * input_dim[1]//2),
+            nn.LeakyReLU()
+        )
         self.activation = nn.LeakyReLU()
 
     def forward(self, x):
         pooled = F.avg_pool2d(x, kernel_size=2, stride=2)
+        pooled_w = pooled.shape[2]
+        pooled_h = pooled.shape[3]
+        pooled = self.dense(pooled.view(pooled.shape[0], -1)).view(pooled.shape[0], -1, pooled_w, pooled_h)
         out = torch.cat(
             [self.conv5(x), self.conv3(x), self.convt(pooled)], dim=1
         )
@@ -27,7 +36,7 @@ class MultiBlock(nn.Module):
 
 class DiffusionModel(L.LightningModule):
     def __init__(
-            self, input_channels, layers, hidden_channels,
+            self, input_dim, input_channels, layers, hidden_channels,
             trajectory_length, step1_beta, temporal_basis_size,
             lr=1e-3
             ):
@@ -47,7 +56,7 @@ class DiffusionModel(L.LightningModule):
         modules = []
         modules.extend([nn.Conv2d(input_channels, hidden_channels, kernel_size=1, padding=0), nn.LeakyReLU()])
         for i in range(layers):
-            modules.append(MultiBlock(hidden_channels, hidden_channels))
+            modules.append(MultiBlock(input_dim, hidden_channels, hidden_channels))
         modules.append(nn.Conv2d(hidden_channels, output_channels, kernel_size=1, padding=0))
         self.reverse_diffusion_net = nn.Sequential(*modules)
 
@@ -73,7 +82,7 @@ class DiffusionModel(L.LightningModule):
         # This is the diffusion kernel from Table App.1 in the paper
         x_noisy = x
 
-        beta = F.sigmoid(self.beta)
+        beta = torch.clamp(F.sigmoid(self.beta), min=self.step1_beta, max=1.0-self.step1_beta)
 
         # OK so this is a tad different to how the paper describes the forward diffusion kernel in Table App.1
         # But to my understanding, they are equivalent
@@ -124,7 +133,7 @@ class DiffusionModel(L.LightningModule):
 
         mu = torch.einsum('btchw,bt->bchw', mu, temporal_basis)
         sigma = torch.einsum('bt,bt->b', sigma, temporal_basis)
-        beta = torch.gather(F.sigmoid(self.beta), dim=0, index=t)
+        beta = torch.clamp(torch.gather(F.sigmoid(self.beta), dim=0, index=t), min=self.step1_beta, max=1.0-self.step1_beta)
 
         # The paper does this, but I'm not sure why
         sigma = torch.sqrt(F.sigmoid(sigma + torch.logit(beta)))
@@ -156,7 +165,7 @@ class DiffusionModel(L.LightningModule):
         # Step 5: Calculate the entropy of the forward diffusion process at the end of the trajectory
         # This is H_q(X^(T) | X^(0)) in Table App.1 in the paper
         # For this, we'll need to calculate the mean and variance of the forward diffusion process at the end of the trajectory
-        beta = F.sigmoid(self.beta)
+        beta = torch.clamp(F.sigmoid(self.beta), min=self.step1_beta, max=1.0-self.step1_beta)
         alpha = 1 - beta
         sigma_1 = torch.sqrt(beta[0])
         sigma_t = torch.sqrt(1 - torch.exp(torch.sum(torch.log(alpha)))) # More numerically stable
@@ -212,8 +221,7 @@ class DiffusionModel(L.LightningModule):
 
     def configure_optimizers(self):
         # Just use Adam and call it a day
-        # Throw in ReduceLROnPlateau for good measure
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-5)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "train_loss"}
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}
