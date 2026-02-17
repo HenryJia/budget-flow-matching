@@ -10,7 +10,6 @@ In case anyone wants to know where this list came from, it was given to me by Su
 
 ## List of papers
 - [x] Deep Unsupervised Learning using Nonequilibrium Thermodynamics [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
-    * Our code is in `nonequilibrium-thermodynamics/`
 - [] Denoising Diffusion Probabilistic Models (DDPM) [ArXiv](https://arxiv.org/abs/2006.11239)
 - [] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
 - [] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
@@ -22,9 +21,10 @@ In case anyone wants to know where this list came from, it was given to me by Su
 - [] Classifier-Free Diffusion Guidance [ArXiv](https://arxiv.org/abs/2207.12598)
 - [] High-Resolution Image Synthesis with Latent Diffusion Models [ArXiv](https://arxiv.org/abs/2112.10752)
 
-# Notes and Empirical Observations
+# Implmenetation Notes and Empirical Observations
 
 ## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
+### Our code is in `nonequilibrium-thermodynamics/`
 
 This paper is interesting. The maths is very focused on figuring out a lowerbound kind of like the variational lowerbound in VAEs. But, there are a fair few problems. For starters, the architecture they use also feels quite overcomplicated for the toy problems which they train on (CIFAR and MNIST).
 
