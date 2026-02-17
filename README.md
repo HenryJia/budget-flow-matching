@@ -10,17 +10,16 @@ In case anyone wants to know where this list came from, it was given to me by Su
 
 ## List of papers
 - [x] Deep Unsupervised Learning using Nonequilibrium Thermodynamics [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
-- [] Denoising Diffusion Probabilistic Models (DDPM) [ArXiv](https://arxiv.org/abs/2006.11239)
-- [] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
-- [] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
-- [] Maximum Likelihood Training of Score-Based Diffusion Models [ArXiv](https://arxiv.org/abs/2101.09258)
-- [] Improved Denoising Diffusion Probabilistic Models [ArXiv](https://arxiv.org/abs/2102.09672)
-- [] Denoising Diffusion Implicit Models (DDIM) [ArXiv](https://arxiv.org/abs/2010.02502)
-- [] DPM-Solver [ArXiv](https://arxiv.org/abs/2206.00927)
-- [] Diffusion Models Beat GANs on Image Synthesis [ArXiv](https://arxiv.org/abs/2105.05233)
-- [] Classifier-Free Diffusion Guidance [ArXiv](https://arxiv.org/abs/2207.12598)
-- [] High-Resolution Image Synthesis with Latent Diffusion Models [ArXiv](https://arxiv.org/abs/2112.10752)
-
+- [ ] Denoising Diffusion Probabilistic Models (DDPM) [ArXiv](https://arxiv.org/abs/2006.11239)
+- [ ] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
+- [ ] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
+- [ ] Maximum Likelihood Training of Score-Based Diffusion Models [ArXiv](https://arxiv.org/abs/2101.09258)
+- [ ] Improved Denoising Diffusion Probabilistic Models [ArXiv](https://arxiv.org/abs/2102.09672)
+- [ ] Denoising Diffusion Implicit Models (DDIM) [ArXiv](https://arxiv.org/abs/2010.02502)
+- [ ] DPM-Solver [ArXiv](https://arxiv.org/abs/2206.00927)
+- [ ] Diffusion Models Beat GANs on Image Synthesis [ArXiv](https://arxiv.org/abs/2105.05233)
+- [ ] Classifier-Free Diffusion Guidance [ArXiv](https://arxiv.org/abs/2207.12598)
+- [ ] High-Resolution Image Synthesis with Latent Diffusion Models [ArXiv](https://arxiv.org/abs/2112.10752)
 # Implmenetation Notes and Empirical Observations
 
 ## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
