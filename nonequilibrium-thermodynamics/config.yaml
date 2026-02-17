@@ -11,12 +11,12 @@ batchsize:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 100
+  value: 1000
 
 gpus:
   description: The number of GPUs to use for training
   type: int
-  value: 1
+  value: 2
 
 input_channels:
   description: The number of input channels for the model
@@ -46,4 +46,4 @@ temporal_basis_size:
 lr:
   description: The learning rate for training the model
   type: float
-  value: 0.0001
+  value: 0.0003

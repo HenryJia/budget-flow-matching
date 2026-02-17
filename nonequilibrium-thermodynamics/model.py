@@ -39,14 +39,10 @@ class DiffusionModel(L.LightningModule):
     def generate_beta(self, step1_beta):
         # Generate the beta schedule for the forward diffusion process
         min_beta = max(1e-6, step1_beta)
+        beta = torch.ones(self.trajectory_length) * max(min_beta, 1.0 / self.trajectory_length)
+        beta = torch.logit(beta) # Use logit because we will be using sigmoid later...
 
-        # So the reference implementation does something a little more complicated
-        # They set up a schedule of betas that eras a fixed fraction of the signal at each step
-        # This they describe in the paper for binomial diffusion. However, it is not mentioned for the gaussian case
-        # I believe they implemented this for the binomial case, and then kept it for the gaussian case
-        # However, it is not clear to me that this is necessary for the gaussian case.
-        # In fact, it seems to me that a simple linear schedule should work just fine
-        return torch.ones(self.trajectory_length) * max(min_beta, 1.0 / self.trajectory_length)
+        return beta
 
 
     def forward_diffusion(self, x, t):
@@ -58,7 +54,7 @@ class DiffusionModel(L.LightningModule):
         # This is the diffusion kernel from Table App.1 in the paper
         x_noisy = x
 
-        beta = torch.clamp(self.beta, min=self.step1_beta, max=1.0-self.step1_beta)
+        beta = F.sigmoid(self.beta)
 
         # OK so this is a tad different to how the paper describes the forward diffusion kernel in Table App.1
         # But to my understanding, they are equivalent
@@ -109,8 +105,7 @@ class DiffusionModel(L.LightningModule):
 
         mu = torch.einsum('btchw,bt->bchw', mu, temporal_basis)
         sigma = torch.einsum('bt,bt->b', sigma, temporal_basis)
-        beta = torch.clamp(self.beta, min=self.step1_beta, max=1.0-self.step1_beta)
-        beta = torch.gather(beta, dim=0, index=t)
+        beta = torch.gather(F.sigmoid(self.beta), dim=0, index=t)
 
         # The paper does this, but I'm not sure why
         sigma = torch.sqrt(F.sigmoid(sigma + torch.logit(beta)))
@@ -142,7 +137,7 @@ class DiffusionModel(L.LightningModule):
         # Step 5: Calculate the entropy of the forward diffusion process at the end of the trajectory
         # This is H_q(X^(T) | X^(0)) in Table App.1 in the paper
         # For this, we'll need to calculate the mean and variance of the forward diffusion process at the end of the trajectory
-        beta = torch.clamp(self.beta, min=self.step1_beta, max=1.0-self.step1_beta)
+        beta = F.sigmoid(self.beta)
         alpha = 1 - beta
         sigma_1 = torch.sqrt(beta[0])
         sigma_t = torch.sqrt(1 - torch.exp(torch.sum(torch.log(alpha)))) # More numerically stable
@@ -198,5 +193,8 @@ class DiffusionModel(L.LightningModule):
 
     def configure_optimizers(self):
         # Just use Adam and call it a day
+        # Throw in ReduceLROnPlateau for good measure
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        return optimizer
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, min_lr=1e-5)
+
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "train_loss"}
