@@ -3,7 +3,47 @@ dataset:
   type: str
   value: "MNIST"
 
-_batchsize:
+batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 64
+  value: 256
+
+epochs:
+  description: The number of epochs to train the model for
+  type: int
+  value: 100
+
+gpus:
+  description: The number of GPUs to use for training
+  type: int
+  value: 1
+
+input_channels:
+  description: The number of input channels for the model
+  type: int
+  value: 1
+
+layers:
+  description: The number of layers in the model
+  type: int
+  value: 8
+hidden_channels:
+  description: The number of hidden channels in the model
+  type: int
+  value: 128
+trajectory_length:
+  description: The length of the diffusion trajectory
+  type: int
+  value: 1024
+step1_beta:
+  description: The beta value for the first step of the diffusion process
+  type: float
+  value: 0.0001
+temporal_basis_size:
+  description: The size of the temporal basis used in the model
+  type: int
+  value: 128
+lr:
+  description: The learning rate for training the model
+  type: float
+  value: 0.0001
