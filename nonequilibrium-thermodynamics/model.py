@@ -5,6 +5,26 @@ import torchvision as tv
 import torch.nn.functional as F
 import lightning as L
 
+
+class MultiBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(MultiBlock, self).__init__()
+        self.conv5 = nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2)
+        self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.convt = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=6, stride=2, padding=2)
+        self.conv1 = nn.Conv2d(out_channels*3, out_channels, kernel_size=1, padding=0)
+        self.activation = nn.LeakyReLU()
+
+    def forward(self, x):
+        pooled = F.avg_pool2d(x, kernel_size=2, stride=2)
+        out = torch.cat(
+            [self.conv5(x), self.conv3(x), self.convt(pooled)], dim=1
+        )
+        out = self.activation(out)
+        out = self.activation(self.conv1(out))
+        return out
+
+
 class DiffusionModel(L.LightningModule):
     def __init__(
             self, input_channels, layers, hidden_channels,
@@ -25,10 +45,9 @@ class DiffusionModel(L.LightningModule):
         # For now, we'll just use a simple convolutional network for the reverse diffusion process
         # We can tune this later to be more efficient and better suited for the task
         modules = []
-        modules.extend([nn.Conv2d(input_channels, hidden_channels, kernel_size=3, padding=1), nn.LeakyReLU()])
+        modules.extend([nn.Conv2d(input_channels, hidden_channels, kernel_size=1, padding=0), nn.LeakyReLU()])
         for i in range(layers):
-            modules.extend([nn.Conv2d(hidden_channels, hidden_channels, kernel_size=3, padding=1), nn.LeakyReLU()])
-            modules.extend([nn.Conv2d(hidden_channels, hidden_channels, kernel_size=1, padding=0), nn.LeakyReLU()])
+            modules.append(MultiBlock(hidden_channels, hidden_channels))
         modules.append(nn.Conv2d(hidden_channels, output_channels, kernel_size=1, padding=0))
         self.reverse_diffusion_net = nn.Sequential(*modules)
 

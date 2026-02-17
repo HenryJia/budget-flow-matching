@@ -30,7 +30,7 @@ layers:
 hidden_channels:
   description: The number of hidden channels in the model
   type: int
-  value: 128
+  value: 64
 trajectory_length:
   description: The length of the diffusion trajectory
   type: int
