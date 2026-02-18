@@ -65,3 +65,7 @@ One might think that learning the transition between x_t and x_0 is harder than 
 This is also compounded by the fact that we're recursively applying the model at each diffusion step. If the model transition is "off" by a small amount, this may be compounded over the diffusion trajectory to produce a nonsensical image.
 
 If we want to put on an intuitive statistical lens, the transition between x_t and x_{t-1} might be a lot noisier. Since x_t to x_0 is inherently an aggregate of the former, by law of large numbers, some of the noise starts to disappear. This gives a higher signal to noise ratio for the model to learn from, which makes training more stable and faster.
+
+Another key difference between this paper and the nonequilibrium thermodynamics paper is that the former has fixed beta diffusion rates whereas the latter attempts to learn them. As previously stated, the former proves superior in practice, even though the latter uses something that should make learning easier if anything. My best guess is just that the aged old rule of better engineering is less engineering applies. The fixed beta diffusion rates just mean there's less moving parts in the model, so things are easier to build.
+
+Here is a sample of the generated faces from CelebA-HQ after 200 epochs: (TODO add sample)
