@@ -42,7 +42,9 @@ def main(args):
         checkpoint_callback = ModelCheckpoint(
             dirpath="./checkpoints",
             monitor="train_loss",
-            mode="min"
+            mode="min",
+            every_n_epochs=10,
+            save_last=True
             )
         sample_callback = SampleCallback(num_samples=16)
         lr_monitor = LearningRateMonitor(logging_interval='step')

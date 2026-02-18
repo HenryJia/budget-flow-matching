@@ -20,7 +20,7 @@ In case anyone wants to know where this list came from, it was given to me by Su
 - [ ] Diffusion Models Beat GANs on Image Synthesis [ArXiv](https://arxiv.org/abs/2105.05233)
 - [ ] Classifier-Free Diffusion Guidance [ArXiv](https://arxiv.org/abs/2207.12598)
 - [ ] High-Resolution Image Synthesis with Latent Diffusion Models [ArXiv](https://arxiv.org/abs/2112.10752)
-# Implmenetation Notes and Empirical Observations
+# Implementation Notes and Empirical Observations
 
 ## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
 ### Our code is in `nonequilibrium-thermodynamics/`
