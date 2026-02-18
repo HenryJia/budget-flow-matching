@@ -1,6 +1,6 @@
 # Henry's Diffusion Classroom
 
-So, I previously worked at Midjoruney, but decided to do a PhD in something completely different for 3 years. As such, I'm a little rusty these days.
+So, I previously worked at Midjourney, but decided to do a PhD in something completely different for 3 years. As such, I'm a little rusty these days.
 
 As always, a good way to polish off the rust and brush up on everything is to try and build stuff from scratch.
 
