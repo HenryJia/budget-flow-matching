@@ -25,6 +25,17 @@ def main(args):
             dataset = tv.datasets.MNIST(root="./data", download=True, transform=transforms)
             input_dim = (28, 28)
             input_channels = 1
+            checkpoint_dir = "./checkpoints_mnist"
+        elif run.config['dataset'] == "CelebA":
+            transforms = tv.transforms.Compose([
+                #tv.transforms.Resize((256, 256)),
+                tv.transforms.ToTensor(),
+                tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # Rescale from [0, 1] to [-1, 1]
+            ])
+            dataset = tv.datasets.ImageFolder(root='./data/celebahq256_imgs/train', transform=transforms)
+            input_dim = (256, 256)
+            input_channels = 3
+            checkpoint_dir = "./checkpoints_celeba"
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
@@ -33,8 +44,6 @@ def main(args):
         model = DiffusionModel(
             input_dim=input_dim,
             input_channels=input_channels,
-            layers=run.config['layers'],
-            hidden_channels=run.config['hidden_channels'],
             trajectory_length=run.config['trajectory_length'],
             sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'],
             lr=run.config['lr']
@@ -43,13 +52,13 @@ def main(args):
         logger = WandbLogger(project="ddpm", log_model="all")
 
         checkpoint_callback = ModelCheckpoint(
-            dirpath="./checkpoints",
+            dirpath=checkpoint_dir,
             monitor="train_loss",
             mode="min",
             every_n_epochs=10,
             save_last=True
             )
-        sample_callback = SampleCallback(num_samples=16)
+        sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), num_samples=16)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],

@@ -6,45 +6,114 @@ import torchvision as tv
 import torch.nn.functional as F
 import lightning as L
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-class MultiBlock(nn.Module):
-    def __init__(self, input_dim, in_channels, out_channels):
-        super(MultiBlock, self).__init__()
-        self.conv_init = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0)
+# The specific U-Net architecture is not based on the paper, and is shamelessly adapted from
+# https://github.com/milesial/Pytorch-UNet
+class DoubleConv(nn.Module):
+    """(convolution => [BN] => ReLU) * 2"""
 
-        self.conv5 = nn.Conv2d(out_channels, out_channels, kernel_size=5, padding=2)
-        self.conv3 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
-        self.convt = nn.ConvTranspose2d(out_channels, out_channels, kernel_size=6, stride=2, padding=2)
-        
-        self.conv1 = nn.Conv2d(out_channels*3, out_channels, kernel_size=1, padding=0)
-        
-        self.dense = nn.Sequential(
-            nn.Linear(input_dim[0]//2 * input_dim[1]//2 * out_channels, out_channels),
-            nn.LeakyReLU(),
-            nn.Linear(out_channels, out_channels * input_dim[0]//2 * input_dim[1]//2),
-            nn.LeakyReLU()
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ELU(),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ELU()
         )
-        self.activation = nn.LeakyReLU()
 
     def forward(self, x):
-        out = self.conv_init(x)
-    
-        pooled = F.avg_pool2d(out, kernel_size=2, stride=2)
-        pooled_w = pooled.shape[2]
-        pooled_h = pooled.shape[3]
-        pooled = self.dense(pooled.view(pooled.shape[0], -1)).view(pooled.shape[0], -1, pooled_w, pooled_h)
+        return self.double_conv(x)
 
-        out = torch.cat(
-            [self.conv5(out), self.conv3(out), self.convt(pooled)], dim=1
+
+class Down(nn.Module):
+    """Downscaling with maxpool then double conv"""
+
+    def __init__(self, in_channels, out_channels, sinusoidal_embedding_size):
+        super().__init__()
+        self.pool_conv = nn.Sequential(
+            nn.AvgPool2d(2),
+            DoubleConv(in_channels, out_channels)
         )
-        out = self.activation(out)
-        out = self.activation(self.conv1(out))
-        return out
+
+        self.time_embedding_net = nn.Sequential(
+            nn.Linear(sinusoidal_embedding_size, out_channels),
+            nn.ELU(),
+            nn.Linear(out_channels, out_channels),
+            nn.ELU()
+        )
+
+    def forward(self, x, time_embedding):
+        return self.pool_conv(x) + self.time_embedding_net(time_embedding)[:, :, None, None]
+
+
+class Up(nn.Module):
+    """Upscaling then double conv"""
+
+    def __init__(self, in_channels, out_channels, bilinear=True):
+        super().__init__()
+
+        # if bilinear, use the normal convolutions to reduce the number of channels
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
+        else:
+            self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
+            self.conv = DoubleConv(in_channels, out_channels)
+
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        # input is CHW
+        diffY = x2.size()[2] - x1.size()[2]
+        diffX = x2.size()[3] - x1.size()[3]
+
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
+                        diffY // 2, diffY - diffY // 2])
+        # if you have padding issues, see
+        # https://github.com/HaiyongJiang/U-Net-Pytorch-Unstructured-Buggy/commit/0e854509c2cea854e247a9c615f175f76fbb2e3a
+        # https://github.com/xiaopeng-liao/Pytorch-UNet/commit/8ebac70e633bac59fc22bb5195e513d5832fb3bd
+        x = torch.cat([x2, x1], dim=1)
+        return self.conv(x)
+
+
+class UNet(nn.Module):
+    def __init__(self, n_channels, sinusoidal_embedding_size, bilinear=False):
+        super(UNet, self).__init__()
+        self.n_channels = n_channels
+        self.bilinear = bilinear
+
+        self.inc = DoubleConv(n_channels, 64)
+        self.down1 = Down(64, 128, sinusoidal_embedding_size)
+        self.down2 = Down(128, 256, sinusoidal_embedding_size)
+        self.down3 = Down(256, 512, sinusoidal_embedding_size)
+        factor = 2 if bilinear else 1
+        self.down4 = Down(512, 1024 // factor, sinusoidal_embedding_size)
+        self.up1 = Up(1024, 512 // factor, bilinear)
+        self.up2 = Up(512, 256 // factor, bilinear)
+        self.up3 = Up(256, 128 // factor, bilinear)
+        self.up4 = Up(128, 64, bilinear)
+        self.out = nn.Conv2d(64, n_channels, kernel_size=1)
+
+    def forward(self, x, time_embedding):
+        x1 = self.inc(x)
+        x2 = self.down1(x1, time_embedding)
+        x3 = self.down2(x2, time_embedding)
+        x4 = self.down3(x3, time_embedding)
+        x5 = self.down4(x4, time_embedding)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        return self.out(x)
 
 
 class DiffusionModel(L.LightningModule):
     def __init__(
-            self, input_dim, input_channels, layers, hidden_channels,
+            self, input_dim, input_channels,
             trajectory_length, sinusoidal_embedding_size,
             lr
             ):
@@ -56,21 +125,7 @@ class DiffusionModel(L.LightningModule):
         self.sinusoidal_embedding_size = sinusoidal_embedding_size
         self.lr = lr
 
-        # For now, we'll just use a simple convolutional network for the reverse diffusion process
-        # We can tune this later to be more efficient and better suited for the task
-        modules = []
-        modules.extend([nn.Conv2d(input_channels, hidden_channels, kernel_size=1, padding=0), nn.LeakyReLU()])
-        for i in range(layers):
-            modules.append(MultiBlock(input_dim, hidden_channels, hidden_channels))
-        modules.append(nn.Conv2d(hidden_channels, input_channels, kernel_size=1, padding=0))
-        self.reverse_diffusion_net = nn.ModuleList(modules)
-
-        self.time_embedding_net = nn.Sequential(
-            nn.Linear(sinusoidal_embedding_size, hidden_channels),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_channels, hidden_channels),
-            nn.LeakyReLU()
-        )
+        self.reverse_diffusion_net = UNet(input_channels, sinusoidal_embedding_size, bilinear=False) 
 
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
         # We will use the same fixed beta schedule as described in section 4 of the paper
@@ -99,12 +154,8 @@ class DiffusionModel(L.LightningModule):
         pos_emb = torch.arange(self.sinusoidal_embedding_size//2, device=x_t.device).float()[None, :]
         pos_emb = torch.exp(torch.log(t[:, None].float()) - math.log(1e4) * 2 * pos_emb / self.sinusoidal_embedding_size)
         pos_emb = torch.cat([torch.sin(pos_emb), torch.cos(pos_emb)], dim=-1)
-        pos_emb = self.time_embedding_net(pos_emb)[:, :, None, None]
 
-        out = self.reverse_diffusion_net[0](x_t)
-        for i in range(1, len(self.reverse_diffusion_net) - 1):
-            out = self.reverse_diffusion_net[i](out + pos_emb) + out
-        out = self.reverse_diffusion_net[-1](out)
+        out = self.reverse_diffusion_net(x_t, pos_emb)
 
         return out
 
@@ -172,6 +223,5 @@ class DiffusionModel(L.LightningModule):
     def configure_optimizers(self):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
-
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
         return {"optimizer": optimizer, "lr_scheduler": scheduler}
