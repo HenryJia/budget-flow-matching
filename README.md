@@ -10,7 +10,7 @@ In case anyone wants to know where this list came from, it was given to me by Su
 
 ## List of papers
 - [x] Deep Unsupervised Learning using Nonequilibrium Thermodynamics [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
-- [ ] Denoising Diffusion Probabilistic Models (DDPM) [ArXiv](https://arxiv.org/abs/2006.11239)
+- [x] Denoising Diffusion Probabilistic Models (DDPM) [ArXiv](https://arxiv.org/abs/2006.11239)
 - [ ] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
 - [ ] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
 - [ ] Maximum Likelihood Training of Score-Based Diffusion Models [ArXiv](https://arxiv.org/abs/2101.09258)
@@ -26,6 +26,8 @@ In case anyone wants to know where this list came from, it was given to me by Su
 
 ## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
 ### Our code is in `nonequilibrium-thermodynamics/`
+
+#### Henry's rating for this paper: 3/10 - honestly, absolutely awful paper to try and implement. But, the mathematical framework is extremely useful for getting a good grasp of the foundations of diffusion models, so it's worth it for that.
 
 This paper is interesting. The maths is very focused on figuring out a lowerbound kind of like the variational lowerbound in VAEs. But, there are a fair few problems. For starters, the architecture they use also feels quite overcomplicated for the toy problems which they train on (CIFAR and MNIST).
 
@@ -45,3 +47,21 @@ All in all, implementing this thing is a neat exercise, but it kind of sucks. It
 
 Here's a sample of the generated MNIST digits after 1000 epochs: (TODO add sample)
 
+## Denoising Diffusion Probabilistic Models (DDPM)
+### Our code is in `ddpm/`
+
+#### Henry's rating for this paper: 10/10 - I fucking love this paper
+
+This paper is honestly a lot better written than the nonequilibrium thermodynamics one as far as implementation is concerned. The maths is a lot more straightforward, and the training process is a lot more stable. Granted though, it doesn't cover the mathematical background as much.
+
+The training set up is much more trivial, and the calculations for doing so are clear in the paper. I didn't even have to look at the reference implementation to figure out how to train the model, which is a rarity these days.
+
+Training for this thing runs much faster than the nonequilibrium thermodynamics model. On MNIST, it seems to mostly converge within the first few epochs. It takes a handful of epochs to be able to generate vaguely digit like things, unlike the nonequilibrium thermodynamics model which takes over 100 epochs to do so.
+
+My big intuition for the difference between this paper vs the nonequilibrium paper is that the nonequilibrium paper is trying to learn the reverse transition between x_t and x_{t-1}, whereas the DDPM paper is trying to learn the reverse transition between x_t and x_0. This means that the DDPM model is effectively learning to denoise all the way back to the original image. The DDPM paper takes advantage of the fact that there is a simple closed form method from converting the transition between x_t to x_0 to x_t to x_{t-1}.
+
+One might think that learning the transition between x_t and x_0 is harder than learning the transition between x_t and x_{t-1}, but in practice this is the opposite. Years ago, when I worked with trying to do high FPS neural SLAM, we found that higher FPS were harder to train than lower FPS. This is because the difference between each frame becomes so small that the signal to noise ratio becomes very low. The model update process effectively has to have very high sensitivity and "noise filtering" ability. The same I believe applies here. Given that the trajectory length is 1000 or more, the difference between x_t and x_{t-1} is very small, possibly actually quite close to the noise floor in the image.
+
+This is also compounded by the fact that we're recursively applying the model at each diffusion step. If the model transition is "off" by a small amount, this may be compounded over the diffusion trajectory to produce a nonsensical image.
+
+If we want to put on an intuitive statistical lens, the transition between x_t and x_{t-1} might be a lot noisier. Since x_t to x_0 is inherently an aggregate of the former, by law of large numbers, some of the noise starts to disappear. This gives a higher signal to noise ratio for the model to learn from, which makes training more stable and faster.
