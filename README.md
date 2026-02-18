@@ -9,8 +9,8 @@ So, this repository contains a set of well commented implementations, as close t
 In case anyone wants to know where this list came from, it was given to me by Sully, an old friend of mine who previously worked at OpenAI.
 
 ## List of papers
-- [x] Deep Unsupervised Learning using Nonequilibrium Thermodynamics [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
-- [x] Denoising Diffusion Probabilistic Models (DDPM) [ArXiv](https://arxiv.org/abs/2006.11239)
+- [x] [Deep Unsupervised Learning using Nonequilibrium Thermodynamics](Deep Unsupervised Learning using Nonequilibrium Thermodynamics) [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
+- [x] [Denoising Diffusion Probabilistic Models (DDPM)](Denoising Diffusion Probabilistic Models (DDPM)) [ArXiv](https://arxiv.org/abs/2006.11239)
 - [ ] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
 - [ ] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
 - [ ] Maximum Likelihood Training of Score-Based Diffusion Models [ArXiv](https://arxiv.org/abs/2101.09258)
