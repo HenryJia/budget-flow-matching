@@ -1,4 +1,5 @@
 import torch
+import math
 import torch.nn as nn
 import torch.utils.data as data
 import torchvision as tv
@@ -9,12 +10,16 @@ import lightning as L
 class MultiBlock(nn.Module):
     def __init__(self, input_dim, in_channels, out_channels):
         super(MultiBlock, self).__init__()
-        self.conv5 = nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2)
-        self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.convt = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=6, stride=2, padding=2)
+        self.conv_init = nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0)
+
+        self.conv5 = nn.Conv2d(out_channels, out_channels, kernel_size=5, padding=2)
+        self.conv3 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.convt = nn.ConvTranspose2d(out_channels, out_channels, kernel_size=6, stride=2, padding=2)
+        
         self.conv1 = nn.Conv2d(out_channels*3, out_channels, kernel_size=1, padding=0)
+        
         self.dense = nn.Sequential(
-            nn.Linear(input_dim[0]//2 * input_dim[1]//2 * in_channels, out_channels),
+            nn.Linear(input_dim[0]//2 * input_dim[1]//2 * out_channels, out_channels),
             nn.LeakyReLU(),
             nn.Linear(out_channels, out_channels * input_dim[0]//2 * input_dim[1]//2),
             nn.LeakyReLU()
@@ -22,12 +27,15 @@ class MultiBlock(nn.Module):
         self.activation = nn.LeakyReLU()
 
     def forward(self, x):
-        pooled = F.avg_pool2d(x, kernel_size=2, stride=2)
+        out = self.conv_init(x)
+    
+        pooled = F.avg_pool2d(out, kernel_size=2, stride=2)
         pooled_w = pooled.shape[2]
         pooled_h = pooled.shape[3]
         pooled = self.dense(pooled.view(pooled.shape[0], -1)).view(pooled.shape[0], -1, pooled_w, pooled_h)
+
         out = torch.cat(
-            [self.conv5(x), self.conv3(x), self.convt(pooled)], dim=1
+            [self.conv5(out), self.conv3(out), self.convt(pooled)], dim=1
         )
         out = self.activation(out)
         out = self.activation(self.conv1(out))
@@ -37,16 +45,15 @@ class MultiBlock(nn.Module):
 class DiffusionModel(L.LightningModule):
     def __init__(
             self, input_dim, input_channels, layers, hidden_channels,
-            trajectory_length, step1_beta, temporal_basis_size,
-            lr=1e-3
+            trajectory_length, sinusoidal_embedding_size,
+            lr
             ):
         super(DiffusionModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
         # The reference implementation does a fair bit of more complicated stuff which I think is a tad esoteric
 
         self.trajectory_length = trajectory_length
-        self.step1_beta = step1_beta
-        self.temporal_basis_size = temporal_basis_size
+        self.sinusoidal_embedding_size = sinusoidal_embedding_size
         self.lr = lr
 
         # For now, we'll just use a simple convolutional network for the reverse diffusion process
@@ -56,7 +63,14 @@ class DiffusionModel(L.LightningModule):
         for i in range(layers):
             modules.append(MultiBlock(input_dim, hidden_channels, hidden_channels))
         modules.append(nn.Conv2d(hidden_channels, input_channels, kernel_size=1, padding=0))
-        self.reverse_diffusion_net = nn.Sequential(*modules)
+        self.reverse_diffusion_net = nn.ModuleList(modules)
+
+        self.time_embedding_net = nn.Sequential(
+            nn.Linear(sinusoidal_embedding_size, hidden_channels),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.LeakyReLU()
+        )
 
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
         # We will use the same fixed beta schedule as described in section 4 of the paper
@@ -79,9 +93,24 @@ class DiffusionModel(L.LightningModule):
 
         return x_t, epsilon_forward
 
+    def reverse_diffusion(self, x_t, t):
+        # We need a sinusoidal position embedding. This is briefly mentioned section 4.
+        # It is described in more detail in appendix B
+        pos_emb = torch.arange(self.sinusoidal_embedding_size//2, device=x_t.device).float()[None, :]
+        pos_emb = torch.exp(torch.log(t[:, None].float()) - math.log(1e4) * 2 * pos_emb / self.sinusoidal_embedding_size)
+        pos_emb = torch.cat([torch.sin(pos_emb), torch.cos(pos_emb)], dim=-1)
+        pos_emb = self.time_embedding_net(pos_emb)[:, :, None, None]
+
+        out = self.reverse_diffusion_net[0](x_t)
+        for i in range(1, len(self.reverse_diffusion_net) - 1):
+            out = self.reverse_diffusion_net[i](out + pos_emb) + out
+        out = self.reverse_diffusion_net[-1](out)
+
+        return out
+
     def sample(self, x_t, t):
         # Sample a single step of the reverse diffusion process as described in Algorithm 2 of the paper
-        epsilon_reverse = self.reverse_diffusion_net(x_t)
+        epsilon_reverse = self.reverse_diffusion(x_t, t)
 
         alpha = 1 - self.beta
         alpha_bar = torch.gather(torch.cumprod(alpha, dim=0), dim=0, index=t)
@@ -118,8 +147,9 @@ class DiffusionModel(L.LightningModule):
 
         # Based on equation 14 and its accompanying explanation, we can do this simple loss or the more complicated one in equation 12
         # The paper suggests that the simple one works better, so we have no reason to do the more complicated one
-        loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='none')
-    
+        loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='mean')
+
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def forward(self, x, trajectory_length=None):
@@ -142,5 +172,6 @@ class DiffusionModel(L.LightningModule):
     def configure_optimizers(self):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
 
-        return optimizer
+        return {"optimizer": optimizer, "lr_scheduler": scheduler}

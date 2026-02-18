@@ -6,12 +6,12 @@ dataset:
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 256
+  value: 128
 
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 1000
+  value: 200
 
 gpus:
   description: The number of GPUs to use for training
@@ -30,12 +30,8 @@ trajectory_length:
   description: The length of the diffusion trajectory
   type: int
   value: 1024
-step1_beta:
-  description: The beta value for the first step of the diffusion process
-  type: float
-  value: 0.0001
-temporal_basis_size:
-  description: The size of the temporal basis used in the model
+sinusoidal_embedding_size:
+  description: The size of the sinusoidal embedding used in the model
   type: int
   value: 128
 lr:

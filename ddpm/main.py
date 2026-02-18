@@ -18,7 +18,11 @@ import wandb
 def main(args):
     with wandb.init(config=args.config, project="ddpm") as run:
         if run.config['dataset'] == "MNIST":
-            dataset = tv.datasets.MNIST(root="./data", download=True, transform=tv.transforms.ToTensor())
+            transforms = tv.transforms.Compose([
+                tv.transforms.ToTensor(),
+                tv.transforms.Normalize((0.5,), (0.5,)) # Rescale from [0, 1] to [-1, 1]
+            ])
+            dataset = tv.datasets.MNIST(root="./data", download=True, transform=transforms)
             input_dim = (28, 28)
             input_channels = 1
         else:
@@ -32,8 +36,7 @@ def main(args):
             layers=run.config['layers'],
             hidden_channels=run.config['hidden_channels'],
             trajectory_length=run.config['trajectory_length'],
-            step1_beta=run.config['step1_beta'],
-            temporal_basis_size=run.config['temporal_basis_size'],
+            sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'],
             lr=run.config['lr']
         )
 
@@ -50,6 +53,7 @@ def main(args):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
+            precision="16-mixed",
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
