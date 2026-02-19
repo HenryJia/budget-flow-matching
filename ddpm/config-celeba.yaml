@@ -33,4 +33,4 @@ lr: # The paper suggests that this is a good learning rate to use for smaller im
 ema_decay:
   description: The decay rate for the EMA weight averaging
   type: float
-  value: 0.99
+  value: 0.99 # The paper uses 0.9999, but we don't have 8xV100s handy, so we need to try other values to converge faster
