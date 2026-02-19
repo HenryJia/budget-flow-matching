@@ -9,6 +9,7 @@ class SampleCallback(Callback):
 
     def on_train_epoch_end(self, trainer, pl_module):
         # Sample from the model at the end of each epoch and log the samples to wandb
+        pl_module.eval()
         samples = pl_module.forward(torch.randn(self.num_samples, *self.input_dim).to(device=pl_module.device))
         samples = (samples + 1.0) / 2.0 # Rescale from [-1, 1] to [0, 1]
         samples = (samples * 255).clamp(0, 255).byte()

@@ -13,13 +13,12 @@ import torch.nn.functional as F
 # The specific U-Net architecture is not based on the paper, and is shamelessly adapted from
 # https://github.com/milesial/Pytorch-UNet
 class DoubleConv(nn.Module):
-    """(convolution => [BN] => ReLU) * 2"""
 
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.double_conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
+            nn.BatchNorm2d(out_channels), # The original paper uses GroupNorm but this is too memory heavy
             nn.ELU(),
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
@@ -151,8 +150,8 @@ class DiffusionModel(L.LightningModule):
     def reverse_diffusion(self, x_t, t):
         # We need a sinusoidal position embedding. This is briefly mentioned section 4.
         # It is described in more detail in appendix B
-        pos_emb = torch.arange(self.sinusoidal_embedding_size//2, device=x_t.device).float()[None, :]
-        pos_emb = torch.exp(torch.log(t[:, None].float()) - math.log(1e4) * 2 * pos_emb / self.sinusoidal_embedding_size)
+        pos_emb = torch.arange(self.sinusoidal_embedding_size//2, device=x_t.device).to(dtype=self.beta.dtype)[None, :]
+        pos_emb = torch.exp(torch.log(t[:, None].to(dtype=self.beta.dtype)) - math.log(1e4) * 2 * pos_emb / self.sinusoidal_embedding_size)
         pos_emb = torch.cat([torch.sin(pos_emb), torch.cos(pos_emb)], dim=-1)
 
         out = self.reverse_diffusion_net(x_t, pos_emb)
@@ -208,7 +207,7 @@ class DiffusionModel(L.LightningModule):
         # But, PyTorch/Lightning convention means we have to call it forward
 
         # Step 1: Draw a sample from the prior distribution
-        x_t = torch.randn_like(x)
+        x_t = torch.randn_like(x, dtype=self.beta.dtype)
 
         # Step 2: Run the reverse diffusion process for the whole trajectory
         if trajectory_length is None:
@@ -223,5 +222,7 @@ class DiffusionModel(L.LightningModule):
     def configure_optimizers(self):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.98)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler}
+        return optimizer
+
+        #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+        #return {"optimizer": optimizer, "lr_scheduler": scheduler}

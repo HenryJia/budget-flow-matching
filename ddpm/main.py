@@ -1,19 +1,27 @@
 import argparse
 
 import torch
-import torch.nn as nn
 import torch.utils.data as data
 import torchvision as tv
-import torch.nn.functional as F
+from torch.optim.swa_utils import get_ema_avg_fn
 
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging
 from lightning.pytorch.loggers import WandbLogger
 
 from model import DiffusionModel
 from callbacks import SampleCallback
 
 import wandb
+
+
+class EMAWeightAveraging(WeightAveraging):
+    def __init__(self, decay):
+        super().__init__(avg_fn=get_ema_avg_fn(decay=decay))
+
+    def should_update(self, step_idx=None, epoch_idx=None):
+        # Start after 100 steps.
+        return (step_idx is not None) and (step_idx >= 100)
 
 def main(args):
     with wandb.init(config=args.config, project="ddpm") as run:
@@ -60,13 +68,15 @@ def main(args):
             )
         sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), num_samples=16)
         lr_monitor = LearningRateMonitor(logging_interval='step')
+        ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
+
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
             precision="16-mixed",
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback],
             )
         trainer.fit(model, dataloader)
 
