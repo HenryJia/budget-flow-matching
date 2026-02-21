@@ -7,7 +7,7 @@ import torchvision as tv
 import torch.nn.functional as F
 
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
 
 from model import DiffusionModel
@@ -48,12 +48,15 @@ def main(args):
             )
         sample_callback = SampleCallback(num_samples=16)
         lr_monitor = LearningRateMonitor(logging_interval='step')
+        pb_callback = RichProgressBar(leave=True)
+
         trainer = L.Trainer(
+            precision='bf16-mixed',
             max_epochs=run.config['epochs'],
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, pb_callback],
             )
         trainer.fit(model, dataloader)
 
