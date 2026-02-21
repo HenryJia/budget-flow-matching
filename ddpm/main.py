@@ -6,7 +6,7 @@ import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
 
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging, RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
 
 from model import DiffusionModel
@@ -69,14 +69,15 @@ def main(args):
         sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), num_samples=16)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
+        pb_callback = RichProgressBar(leave=True)
 
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
-            precision="16-mixed",
+            precision="bf16-true",
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
             )
         trainer.fit(model, dataloader)
 

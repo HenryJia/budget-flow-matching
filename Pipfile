@@ -12,6 +12,7 @@ torchvision = "*"
 lightning = "*"
 wandb = "*"
 gdown = "*"
+rich = "*"
 
 [requires]
 python_version = "3.14"

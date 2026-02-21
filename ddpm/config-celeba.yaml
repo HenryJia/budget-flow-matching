@@ -11,7 +11,7 @@ batchsize:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 500
+  value: 1000
 
 gpus:
   description: The number of GPUs to use for training
@@ -21,7 +21,7 @@ gpus:
 trajectory_length:
   description: The length of the diffusion trajectory
   type: int
-  value: 1024 # I know the paper used 1000 but I like powers of 2
+  value: 1000
 sinusoidal_embedding_size:
   description: The size of the sinusoidal embedding used in the model
   type: int
@@ -29,8 +29,8 @@ sinusoidal_embedding_size:
 lr: # The paper suggests that this is a good learning rate to use for smaller images. For larger images they used 2e-5
   description: The learning rate for training the model
   type: float
-  value: 0.00002
+  value: 0.00001
 ema_decay:
   description: The decay rate for the EMA weight averaging
   type: float
-  value: 0.99999 # The paper uses 0.9999, but we don't have 8xV100s handy, so we need to try other values to converge faster
+  value: 0.9999 # The paper uses 0.9999, but we don't have 8xV100s handy, so we need to try other values to converge faster
