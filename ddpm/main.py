@@ -73,7 +73,7 @@ def main(args):
 
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
-            precision="bf16-true",
+            precision="bf16-mixed",
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
