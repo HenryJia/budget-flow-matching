@@ -14,41 +14,62 @@ import torch.nn.functional as F
 # https://github.com/milesial/Pytorch-UNet
 class DoubleConv(nn.Module):
 
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, use_time_embedding=False, sinusoidal_embedding_size=None):
         super().__init__()
-        self.double_conv = nn.Sequential(
+        self.conv1 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels), # The original paper uses GroupNorm but this is too memory heavy
-            nn.ELU(),
+            nn.ELU()
+        )
+
+        self.conv2 = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ELU()
         )
 
-    def forward(self, x):
-        return self.double_conv(x)
+        self.use_time_embedding = use_time_embedding
+        if use_time_embedding:
+            self.time_embedding_net = nn.Sequential(
+                nn.Linear(sinusoidal_embedding_size, out_channels),
+                nn.ELU(),
+                nn.Linear(out_channels, out_channels),
+                nn.ELU()
+            )
 
+    def forward(self, x, time_embedding=None):
+        out = self.conv1(x)
+        if self.use_time_embedding: # Add the time embedding in the middle of the 2 convolutions
+            out = out + self.time_embedding_net(time_embedding)[:, :, None, None]
+        out = self.conv2(out) + out # Residual connection as described in paper
+        return out
 
 class Down(nn.Module):
     """Downscaling with maxpool then double conv"""
 
-    def __init__(self, in_channels, out_channels, sinusoidal_embedding_size):
+    def __init__(self, in_channels, out_channels, sinusoidal_embedding_size, use_attention=False):
         super().__init__()
-        self.pool_conv = nn.Sequential(
-            nn.AvgPool2d(2),
-            DoubleConv(in_channels, out_channels)
-        )
+        self.conv = DoubleConv(in_channels, out_channels, use_time_embedding=True, sinusoidal_embedding_size=sinusoidal_embedding_size)
 
-        self.time_embedding_net = nn.Sequential(
-            nn.Linear(sinusoidal_embedding_size, out_channels),
-            nn.ELU(),
-            nn.Linear(out_channels, out_channels),
-            nn.ELU()
-        )
+
+        self.use_attention = use_attention
+        if use_attention:
+            self.attn = nn.MultiheadAttention(out_channels, num_heads=4, batch_first=True)
 
     def forward(self, x, time_embedding):
-        return self.pool_conv(x) + self.time_embedding_net(time_embedding)[:, :, None, None]
+        x = F.avg_pool2d(x, kernel_size=2) # Downsample by a factor of 2
+        x = self.conv(x, time_embedding)
 
+        if not self.use_attention:
+            return x
+
+        # Apply attention
+        batch_size, channels, height, width = x.shape
+        x = x.permute(0, 2, 3, 1).contiguous().view(batch_size, height * width, channels)
+        x_attn, _ = self.attn(x, x, x)
+        x = x_attn.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
+
+        return x
 
 class Up(nn.Module):
     """Upscaling then double conv"""
@@ -85,29 +106,40 @@ class UNet(nn.Module):
         self.n_channels = n_channels
         self.bilinear = bilinear
 
-        self.inc = DoubleConv(n_channels, 64)
-        self.down1 = Down(64, 128, sinusoidal_embedding_size)
-        self.down2 = Down(128, 256, sinusoidal_embedding_size)
-        self.down3 = Down(256, 512, sinusoidal_embedding_size)
+        self.inc = DoubleConv(n_channels, 8)
+        self.down = nn.ModuleList()
+        self.down.append(Down(8, 16, sinusoidal_embedding_size))
+        self.down.append(Down(16, 32, sinusoidal_embedding_size))
+        self.down.append(Down(32, 64, sinusoidal_embedding_size, use_attention=True))
+        self.down.append(Down(64, 128, sinusoidal_embedding_size, use_attention=True))
+        self.down.append(Down(128, 256, sinusoidal_embedding_size, use_attention=True))
+        self.down.append(Down(256, 512, sinusoidal_embedding_size, use_attention=True))
         factor = 2 if bilinear else 1
-        self.down4 = Down(512, 1024 // factor, sinusoidal_embedding_size)
-        self.up1 = Up(1024, 512 // factor, bilinear)
-        self.up2 = Up(512, 256 // factor, bilinear)
-        self.up3 = Up(256, 128 // factor, bilinear)
-        self.up4 = Up(128, 64, bilinear)
-        self.out = nn.Conv2d(64, n_channels, kernel_size=1)
+        self.down.append(Down(512, 1024 // factor, sinusoidal_embedding_size, use_attention=True))
+
+        self.up = nn.ModuleList()
+        self.up.append(Up(1024, 512 // factor, bilinear))
+        self.up.append(Up(512, 256 // factor, bilinear))
+        self.up.append(Up(256, 128 // factor, bilinear))
+        self.up.append(Up(128, 64 // factor, bilinear))
+        self.up.append(Up(64, 32 // factor, bilinear))
+        self.up.append(Up(32, 16 // factor, bilinear))
+        self.up.append(Up(16, 8, bilinear))
+        self.out = nn.Conv2d(8, n_channels, kernel_size=1)
 
     def forward(self, x, time_embedding):
-        x1 = self.inc(x)
-        x2 = self.down1(x1, time_embedding)
-        x3 = self.down2(x2, time_embedding)
-        x4 = self.down3(x3, time_embedding)
-        x5 = self.down4(x4, time_embedding)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
-        return self.out(x)
+        out = self.inc(x)
+
+        down_layers = [out]
+        for i, d in enumerate(self.down):
+            out = d(out, time_embedding)
+            if i < len(self.down) - 1: # Don't save the output of the last down layer as we won't have a skip connection for it
+                down_layers.append(out)
+
+        for u in self.up:
+            out = u(out, down_layers.pop())
+
+        return self.out(out)
 
 
 class DiffusionModel(L.LightningModule):
