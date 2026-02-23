@@ -108,24 +108,24 @@ class UNet(nn.Module):
 
         self.inc = DoubleConv(n_channels, 8)
         self.down = nn.ModuleList()
-        self.down.append(Down(8, 16, sinusoidal_embedding_size))
         self.down.append(Down(16, 32, sinusoidal_embedding_size))
-        self.down.append(Down(32, 64, sinusoidal_embedding_size, use_attention=True))
+        self.down.append(Down(32, 64, sinusoidal_embedding_size))
         self.down.append(Down(64, 128, sinusoidal_embedding_size, use_attention=True))
         self.down.append(Down(128, 256, sinusoidal_embedding_size, use_attention=True))
         self.down.append(Down(256, 512, sinusoidal_embedding_size, use_attention=True))
+        self.down.append(Down(512, 1024, sinusoidal_embedding_size, use_attention=True))
         factor = 2 if bilinear else 1
-        self.down.append(Down(512, 1024 // factor, sinusoidal_embedding_size, use_attention=True))
+        self.down.append(Down(1024, 2048 // factor, sinusoidal_embedding_size, use_attention=True))
 
         self.up = nn.ModuleList()
+        self.up.append(Up(2048, 1024 // factor, bilinear))
         self.up.append(Up(1024, 512 // factor, bilinear))
         self.up.append(Up(512, 256 // factor, bilinear))
         self.up.append(Up(256, 128 // factor, bilinear))
         self.up.append(Up(128, 64 // factor, bilinear))
         self.up.append(Up(64, 32 // factor, bilinear))
-        self.up.append(Up(32, 16 // factor, bilinear))
-        self.up.append(Up(16, 8, bilinear))
-        self.out = nn.Conv2d(8, n_channels, kernel_size=1)
+        self.up.append(Up(32, 16, bilinear))
+        self.out = nn.Conv2d(16, n_channels, kernel_size=1)
 
     def forward(self, x, time_embedding):
         out = self.inc(x)
