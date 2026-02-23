@@ -58,7 +58,7 @@ class DoubleConv(nn.Module):
 
         self.use_attention = use_attention
         if use_attention:
-            self.attn = AttentionStack(out_channels, num_heads=4, num_layers=2)
+            self.attn = AttentionStack(out_channels, num_heads=4, num_layers=1)
 
     def forward(self, x, time_embedding=None):
         out = self.conv1(x)
