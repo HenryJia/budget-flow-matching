@@ -106,7 +106,7 @@ class UNet(nn.Module):
         self.n_channels = n_channels
         self.bilinear = bilinear
 
-        self.inc = DoubleConv(n_channels, 8)
+        self.inc = DoubleConv(n_channels, 16, use_time_embedding=True, sinusoidal_embedding_size=sinusoidal_embedding_size)
         self.down = nn.ModuleList()
         self.down.append(Down(16, 32, sinusoidal_embedding_size))
         self.down.append(Down(32, 64, sinusoidal_embedding_size))
@@ -128,7 +128,7 @@ class UNet(nn.Module):
         self.out = nn.Conv2d(16, n_channels, kernel_size=1)
 
     def forward(self, x, time_embedding):
-        out = self.inc(x)
+        out = self.inc(x, time_embedding)
 
         down_layers = [out]
         for i, d in enumerate(self.down):
