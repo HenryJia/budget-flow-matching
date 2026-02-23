@@ -10,6 +10,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class AttentionStack(nn.Module):
+    def __init__(self, channels, num_heads, num_layers=4):
+        super(AttentionStack, self).__init__()
+        self.attn = nn.ModuleList(
+            [nn.MultiheadAttention(channels, num_heads=num_heads, batch_first=True) for i in range(num_layers)]
+        )
+        self.linear = nn.ModuleList(
+            [nn.Sequential(nn.ELU(), nn.Linear(channels, channels), nn.ELU()) for i in range(num_layers)]
+        )
+
+    def forward(self, x):
+        batch_size, channels, height, width = x.shape
+        x = x.permute(0, 2, 3, 1).contiguous().view(batch_size, height * width, channels)
+        for attn, linear in zip(self.attn, self.linear):
+            x_attn, _ = attn(x, x, x)
+            x = x + linear(x_attn)
+        x = x.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
+        return x
+
 # The specific U-Net architecture is not based on the paper, and is shamelessly adapted from
 # https://github.com/milesial/Pytorch-UNet
 class DoubleConv(nn.Module):
@@ -39,7 +58,7 @@ class DoubleConv(nn.Module):
 
         self.use_attention = use_attention
         if use_attention:
-            self.attn = nn.MultiheadAttention(out_channels, num_heads=4, batch_first=True)
+            self.attn = AttentionStack(out_channels, num_heads=4, num_layers=2)
 
     def forward(self, x, time_embedding=None):
         out = self.conv1(x)
@@ -48,11 +67,7 @@ class DoubleConv(nn.Module):
         out = self.conv2(out) + out # Residual connection as described in paper
 
         if self.use_attention:
-            # Apply attention
-            batch_size, channels, height, width = out.shape
-            out = out.permute(0, 2, 3, 1).contiguous().view(batch_size, height * width, channels)
-            x_attn, _ = self.attn(out, out, out)
-            out = x_attn.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
+            out = self.attn(out)
 
         return out
 
@@ -123,20 +138,7 @@ class UNet(nn.Module):
         factor = 2 if bilinear else 1
         self.down.append(Down(512, 1024 // factor, sinusoidal_embedding_size, use_attention=True))
 
-        self.attn = nn.Sequential(
-            nn.MultiheadAttention(1024 // factor, num_heads=4, batch_first=True),
-            nn.ELU(),
-            nn.Linear(1024 // factor, 1024 // factor),
-            nn.ELU(),
-            nn.MultiheadAttention(1024 // factor, num_heads=4, batch_first=True),
-            nn.ELU(),
-            nn.Linear(1024 // factor, 1024 // factor),
-            nn.ELU(),
-            nn.MultiheadAttention(1024 // factor, num_heads=4, batch_first=True),
-            nn.ELU(),
-            nn.Linear(1024 // factor, 1024 // factor),
-            nn.ELU()
-        )
+        self.attn = AttentionStack(1024 // factor, num_heads=4, num_layers=4)
 
         self.up = nn.ModuleList()
         self.up.append(Up(1024, 512 // factor, bilinear, sinusoidal_embedding_size, use_attention=True))
@@ -157,11 +159,7 @@ class UNet(nn.Module):
             if i < len(self.down) - 1: # Don't save the output of the last down layer as we won't have a skip connection for it
                 down_layers.append(out)
         
-        h = out.shape[2]
-        w = out.shape[3]
-        out = out.permute(0, 2, 3, 1).contiguous().view(out.shape[0], h * w, out.shape[1])
-        out, _ = self.attn(out, out, out)
-        out = out.view(out.shape[0], h, w, out.shape[2]).permute(0, 3, 1, 2)
+        out = self.attn(out)
 
         for u in self.up:
             out = u(out, down_layers.pop(), time_embedding)
