@@ -160,7 +160,7 @@ class UNet(nn.Module):
         h = out.shape[2]
         w = out.shape[3]
         out = out.permute(0, 2, 3, 1).contiguous().view(out.shape[0], h * w, out.shape[1])
-        out = self.attn(out)
+        out, _ = self.attn(out, out, out)
         out = out.view(out.shape[0], h, w, out.shape[2]).permute(0, 3, 1, 2)
 
         for u in self.up:
