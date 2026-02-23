@@ -13,6 +13,9 @@ import torch.nn.functional as F
 class AttentionStack(nn.Module):
     def __init__(self, channels, num_heads, num_layers=4):
         super(AttentionStack, self).__init__()
+
+        self.norm = nn.ModuleList([nn.LayerNorm(channels) for i in range(num_layers)])
+
         self.attn = nn.ModuleList(
             [nn.MultiheadAttention(channels, num_heads=num_heads, batch_first=True) for i in range(num_layers)]
         )
@@ -22,12 +25,13 @@ class AttentionStack(nn.Module):
 
     def forward(self, x):
         batch_size, channels, height, width = x.shape
-        x = x.permute(0, 2, 3, 1).contiguous().view(batch_size, height * width, channels)
-        for attn, linear in zip(self.attn, self.linear):
-            x_attn, _ = attn(x, x, x)
-            x = x + linear(x_attn)
-        x = x.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
-        return x
+        out = x.permute(0, 2, 3, 1).contiguous().view(batch_size, height * width, channels)
+        for attn, linear, norm in zip(self.attn, self.linear, self.norm):
+            x_attn = norm(out)
+            x_attn, _ = attn(x_attn, x_attn, x_attn)
+            out = out + linear(x_attn)
+        out = out.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
+        return out
 
 # The specific U-Net architecture is not based on the paper, and is shamelessly adapted from
 # https://github.com/milesial/Pytorch-UNet
