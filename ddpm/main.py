@@ -8,6 +8,7 @@ from torch.optim.swa_utils import get_ema_avg_fn
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging, RichProgressBar
 from lightning.pytorch.loggers import WandbLogger
+from lightning.fabric.utilities.throughput import measure_flops
 
 from model import DiffusionModel
 from callbacks import SampleCallback
@@ -56,6 +57,21 @@ def main(args):
             sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'],
             lr=run.config['lr']
         )
+
+        print("Measuring FLOPs...")
+        flops = measure_flops(
+            model,
+            lambda: model(torch.randn(1, input_channels, *input_dim), trajectory_length=1)
+        )
+        print(f"Forward Diffusion FLOPs: {flops / 1e9:.2f} GFLOPs")
+
+        flops = measure_flops(
+            model,
+            lambda: model(torch.randn(1, input_channels, *input_dim), trajectory_length=1),
+            lambda _: model.training_step(torch.randn(1, input_channels, *input_dim), 0)
+        )
+        print(f"Training Step FLOPs: {flops / 1e9:.2f} GFLOPs")
+        print("\n\nStarting training...")
 
         logger = WandbLogger(project="ddpm", log_model="all")
 

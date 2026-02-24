@@ -11,7 +11,7 @@ batchsize:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 1000
+  value: 5000
 
 gpus:
   description: The number of GPUs to use for training
