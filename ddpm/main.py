@@ -66,7 +66,7 @@ def main(args):
             every_n_epochs=10,
             save_last=True
             )
-        sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), num_samples=8)
+        sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), frequency=run.config['sample_frequency'], num_samples=8)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True)

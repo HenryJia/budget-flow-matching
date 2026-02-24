@@ -21,7 +21,7 @@ gpus:
 trajectory_length:
   description: The length of the diffusion trajectory
   type: int
-  value: 1000
+  value: 5000
 sinusoidal_embedding_size:
   description: The size of the sinusoidal embedding used in the model
   type: int
@@ -34,3 +34,8 @@ ema_decay:
   description: The decay rate for the EMA weight averaging
   type: float
   value: 0.9999 # The paper uses 0.9999, but we don't have 8xV100s handy, so we need to try other values to converge faster
+
+sample_frequency:
+  description: The frequency (in epochs) at which to sample from the model and log the samples to wandb
+  type: int
+  value: 50

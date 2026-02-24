@@ -54,9 +54,9 @@ class DoubleConv(nn.Module):
         self.sinusoidal_embedding_size = sinusoidal_embedding_size
         if self.sinusoidal_embedding_size:
             self.time_embedding_net = nn.Sequential(
-                nn.Linear(sinusoidal_embedding_size, out_channels),
+                nn.Linear(sinusoidal_embedding_size, out_channels*4),
                 nn.ELU(),
-                nn.Linear(out_channels, out_channels),
+                nn.Linear(out_channels*4, out_channels),
                 nn.ELU()
             )
 
@@ -283,5 +283,6 @@ class DiffusionModel(L.LightningModule):
     def configure_optimizers(self):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, cooldown=100, min_lr=2e-6)
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "train_loss", "frequency": 1, "interval": "epoch"}
+        return optimizer
+        #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, cooldown=100, min_lr=2e-6)
+        #return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "train_loss", "frequency": 1, "interval": "epoch"}

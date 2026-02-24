@@ -35,3 +35,7 @@ ema_decay:
   type: float
   value: 0.99
 
+sample_frequency:
+  description: The frequency (in epochs) at which to sample from the model and log the samples to wandb
+  type: int
+  value: 10
