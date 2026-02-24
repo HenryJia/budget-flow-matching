@@ -6,7 +6,7 @@ dataset:
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 16
+  value: 32
 
 epochs:
   description: The number of epochs to train the model for
