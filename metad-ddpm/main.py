@@ -1,17 +1,19 @@
 import argparse
 
 import torch
+torch.autograd.set_detect_anomaly(True)
 import torch.utils.data as data
 import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
 
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging, RichProgressBar
+from lightning.pytorch.callbacks.progress.rich_progress import RichProgressBarTheme
 from lightning.pytorch.loggers import WandbLogger
 from lightning.fabric.utilities.throughput import measure_flops
 
-from model import DiffusionModel
-from callbacks import SampleCallback
+from model import MetadynamicsDiffusionModel
+from callbacks import SampleCallback, MetadynamicsOnPlateau
 
 import wandb
 
@@ -25,7 +27,7 @@ class EMAWeightAveraging(WeightAveraging):
         return (step_idx is not None) and (step_idx >= 100)
 
 def main(args):
-    with wandb.init(config=args.config, project="ddpm") as run:
+    with wandb.init(config=args.config, project="metad-ddpm") as run:
         if run.config['dataset'] == "MNIST":
             transforms = tv.transforms.Compose([
                 tv.transforms.ToTensor(),
@@ -50,12 +52,13 @@ def main(args):
 
         dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=8)
 
-        model = DiffusionModel(
+        model = MetadynamicsDiffusionModel(
             input_dim=input_dim,
             input_channels=input_channels,
             trajectory_length=run.config['trajectory_length'],
-            sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'],
-            lr=run.config['lr']
+            sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'], 
+            lr=run.config['lr'],
+            metad_basis_size=run.config['metad_basis_size'], metad_scale=run.config['metad_scale']
         )
 
         print("Measuring FLOPs...")
@@ -84,16 +87,18 @@ def main(args):
             )
         sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), frequency=run.config['sample_frequency'], num_samples=8)
         lr_monitor = LearningRateMonitor(logging_interval='step')
-        ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
-        pb_callback = RichProgressBar(leave=True)
+        #ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
+        pb_callback = RichProgressBar(leave=True, theme=RichProgressBarTheme(metrics_format=".3g"))
+        #metad_callback = MetadynamicsOnPlateau(monitor="train_loss", patience=5)
 
+        model.activate_metadynamics()
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
             precision="bf16-mixed",
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, pb_callback]#, metad_callback],
             )
         trainer.fit(model, dataloader)
 

@@ -171,26 +171,105 @@ class UNet(nn.Module):
         return self.out(out)
 
 
-class DiffusionModel(L.LightningModule):
+class MetadynamicsDiffusionModel(L.LightningModule):
     def __init__(
             self, input_dim, input_channels,
-            trajectory_length, sinusoidal_embedding_size,
-            lr
+            trajectory_length, sinusoidal_embedding_size, lr,
+            metad_basis_size=128, metad_scale=0.001
             ):
-        super(DiffusionModel, self).__init__()
-        # Note: This is going to be a bit different to the reference theano implementation
-        # The reference implementation does a fair bit of more complicated stuff which I think is a tad esoteric
+        super(MetadynamicsDiffusionModel, self).__init__()
 
         self.trajectory_length = trajectory_length
         self.sinusoidal_embedding_size = sinusoidal_embedding_size
         self.lr = lr
 
+        self.metad_basis_size = metad_basis_size
+        self.metad_scale = metad_scale
+
+        # So because we're projecting linearly into a much lower dimension, running out of memory isn't an issue
+        # However, our low dimensional projection will eventually run out of "space" to feasibly distinguish between different parameter configs
+        # So, we will regularly reset the linear projection we use to project the parameters into the low dimensional space
+        self.max_metad_length = self.metad_basis_size * 4
+
         self.reverse_diffusion_net = UNet(input_channels, sinusoidal_embedding_size, bilinear=False) 
 
-        # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
-        # We will use the same fixed beta schedule as described in section 4 of the paper
         self.beta = nn.Parameter(torch.linspace(start=1e-4, end=0.02, steps=trajectory_length), requires_grad=False)
 
+        self.use_metadynamics = False
+        self.metadynamics_count = 0
+        self.metadynamics_loc = nn.Parameter(torch.zeros((self.max_metad_length, self.metad_basis_size)), requires_grad=False)
+        self.weight_basis = nn.Parameter(self.get_weight_basis(), requires_grad=False)
+        self.metad_width = nn.Parameter(torch.tensor(1.0), requires_grad=False)
+
+    def get_all_parameters(self):
+        all_parameters = []
+        for param in self.parameters():
+            if param.requires_grad:
+                all_parameters.append(param)
+        all_parameters = torch.cat([p.view(-1) for p in all_parameters])
+        return all_parameters
+
+    def get_weight_basis(self):
+        all_parameters = self.get_all_parameters()
+        weight_basis = torch.randn(self.metad_basis_size, all_parameters.shape[0], device=all_parameters.device, dtype=all_parameters.dtype)
+        return weight_basis.detach()
+
+    def reset_metadynamics(self):
+        #print("Reseting metadynamics...")
+        # We'll trigger this function if and when we want to start using metadynamics
+        with torch.no_grad():
+            self.weight_basis.copy_(torch.randn_like(self.weight_basis))
+            #self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
+            self.metad_width.copy_(torch.tensor(1.0))
+        self.metadynamics_count = 0
+
+    def activate_metadynamics(self):
+        self.use_metadynamics = True
+        self.reset_metadynamics()
+
+    def deactivate_metadynamics(self):
+        self.use_metadynamics = False
+        self.reset_metadynamics()
+
+    def metadynamics_loss(self):
+        # This is the metadynamics function from metadynamics in computational chemistry
+        all_parameters = self.get_all_parameters()
+        loc = torch.matmul(self.weight_basis.detach(), all_parameters)
+
+        # So we hardcoded the scale of the Gaussians as a hyperparameter, as this feels intuitive
+        # The width of the Gaussians however, is very much less intuitive here
+        # In computational chemistry, the collective variables are real physical quantities with units
+        # So choosing the width can be done with reference to the physical system. Here, we have no such intuition to draw on
+        # So, we'll try by basing it on the distance between the first 2 metadynamics locations
+
+        # If this is the first time, then we just add the location as a parameter and return 0 loss as we have no past locations to compare to
+        with torch.no_grad():
+            if self.metadynamics_count == 0:
+                self.metadynamics_loc[0] = loc
+                self.metadynamics_count += 1
+                return 0.0
+
+            # If we have 2 locations, use it to set the width
+            if self.metadynamics_count == 1:
+                metad_width = torch.sqrt(F.mse_loss(self.metadynamics_loc[0], loc, reduction='mean'))
+                metad_width = metad_width.clamp(min=1e-4, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
+                self.metad_width.copy_(metad_width)
+
+        loss = 0.0
+        for i in range(self.metadynamics_count):
+            past_loc = self.metadynamics_loc[i].clone().detach() # Note: must use clone or the autograd engine will throw a tantrum
+            mse = F.mse_loss(loc, past_loc, reduction='mean') / (2 * self.metad_width.detach()**2)
+            mse = mse.clamp(max=10) # Clamp the mse to avoid numerical issues with torch.exp
+            loss = loss + self.metad_scale * torch.exp(-mse)
+
+        with torch.no_grad():
+            self.metadynamics_loc[self.metadynamics_count] = loc.detach()
+        self.metadynamics_count += 1
+
+        if self.metadynamics_count >= self.max_metad_length:
+            self.reset_metadynamics()
+
+        return loss
 
     def forward_diffusion(self, x_0, t):
         # Add noise to the input according to the beta schedule
@@ -258,9 +337,17 @@ class DiffusionModel(L.LightningModule):
 
         # Based on equation 14 and its accompanying explanation, we can do this simple loss or the more complicated one in equation 12
         # The paper suggests that the simple one works better, so we have no reason to do the more complicated one
-        loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='mean')
+        train_loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='mean')
+        self.log("train_loss", train_loss, prog_bar=True)
 
-        self.log("train_loss", loss, prog_bar=True)
+        if self.use_metadynamics:
+            metad_loss = self.metadynamics_loss()
+            self.log("metad_loss", metad_loss, prog_bar=True)
+            loss = train_loss + metad_loss
+        else:
+            self.log("metad_loss", 0.0, prog_bar=True)
+            loss = train_loss
+        self.log("total_loss", loss, prog_bar=True)
         return loss
 
     def forward(self, x, trajectory_length=None):
