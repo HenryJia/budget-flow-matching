@@ -195,7 +195,9 @@ class MetadynamicsDiffusionModel(L.LightningModule):
 
         self.beta = nn.Parameter(torch.linspace(start=1e-4, end=0.02, steps=trajectory_length), requires_grad=False)
 
-        self.use_metadynamics = False
+        # This can be done with a simple boolean, but it seems for multigpu, things can get a bit weird
+        # If we use a parameter Lightning will automatically sync it across the gpus for us, which is very convenient
+        self.use_metadynamics = nn.Parameter(torch.tensor((0,), dtype=torch.uint8), requires_grad=False)
         self.metadynamics_count = 0
         self.metadynamics_loc = nn.Parameter(torch.zeros((self.max_metad_length, self.metad_basis_size)), requires_grad=False)
         self.weight_basis = nn.Parameter(self.get_weight_basis(), requires_grad=False)
@@ -224,11 +226,13 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         self.metadynamics_count = 0
 
     def activate_metadynamics(self):
-        self.use_metadynamics = True
+        with torch.no_grad():
+            self.use_metadynamics.copy_(torch.ones_like(self.use_metadynamics))
         self.reset_metadynamics()
 
     def deactivate_metadynamics(self):
-        self.use_metadynamics = False
+        with torch.no_grad():
+            self.use_metadynamics.copy_(torch.zeros_like(self.use_metadynamics))
         self.reset_metadynamics()
 
     def metadynamics_loss(self):
@@ -340,7 +344,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         train_loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='mean')
         self.log("train_loss", train_loss, prog_bar=True)
 
-        if self.use_metadynamics:
+        if self.use_metadynamics.item() > 0:
             metad_loss = self.metadynamics_loss()
             self.log("metad_loss", metad_loss, prog_bar=True)
             loss = train_loss + metad_loss

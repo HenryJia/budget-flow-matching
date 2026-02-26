@@ -89,16 +89,16 @@ def main(args):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         #ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True, theme=RichProgressBarTheme(metrics_format=".3g"))
-        #metad_callback = MetadynamicsOnPlateau(monitor="train_loss", patience=5)
+        metad_callback = MetadynamicsOnPlateau(monitor="train_loss", patience=5)
 
-        model.activate_metadynamics()
+        #model.activate_metadynamics()
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
             precision="bf16-mixed",
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor, pb_callback]#, metad_callback],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, pb_callback, metad_callback],
             )
         trainer.fit(model, dataloader)
 
