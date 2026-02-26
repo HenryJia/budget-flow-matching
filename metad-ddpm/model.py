@@ -175,7 +175,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
     def __init__(
             self, input_dim, input_channels,
             trajectory_length, sinusoidal_embedding_size, lr,
-            metad_basis_size=128, metad_scale=0.001
+            metad_basis_size=128, metad_scale=0.001, metad_interval=10
             ):
         super(MetadynamicsDiffusionModel, self).__init__()
 
@@ -185,6 +185,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
 
         self.metad_basis_size = metad_basis_size
         self.metad_scale = metad_scale
+        self.metad_interval = metad_interval
 
         # So because we're projecting linearly into a much lower dimension, running out of memory isn't an issue
         # However, our low dimensional projection will eventually run out of "space" to feasibly distinguish between different parameter configs
@@ -197,8 +198,9 @@ class MetadynamicsDiffusionModel(L.LightningModule):
 
         # This can be done with a simple boolean, but it seems for multigpu, things can get a bit weird
         # If we use a parameter Lightning will automatically sync it across the gpus for us, which is very convenient
-        self.use_metadynamics = nn.Parameter(torch.tensor((0,), dtype=torch.uint8), requires_grad=False)
         self.metadynamics_count = 0
+        self.metadynamics_idx = 0
+        self.use_metadynamics = nn.Parameter(torch.tensor((0,), dtype=torch.uint8), requires_grad=False)
         self.metadynamics_loc = nn.Parameter(torch.zeros((self.max_metad_length, self.metad_basis_size)), requires_grad=False)
         self.weight_basis = nn.Parameter(self.get_weight_basis(), requires_grad=False)
         self.metad_width = nn.Parameter(torch.tensor(1.0), requires_grad=False)
@@ -224,6 +226,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
             #self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
             self.metad_width.copy_(torch.tensor(1.0))
         self.metadynamics_count = 0
+        self.metadynamics_idx = 0
 
     def activate_metadynamics(self):
         with torch.no_grad():
@@ -247,28 +250,34 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         # So, we'll try by basing it on the distance between the first 2 metadynamics locations
 
         # If this is the first time, then we just add the location as a parameter and return 0 loss as we have no past locations to compare to
+        loss = 0.0
         with torch.no_grad():
             if self.metadynamics_count == 0:
                 self.metadynamics_loc[0] = loc
                 self.metadynamics_count += 1
+                self.metadynamics_idx += 1
                 return 0.0
 
-            # If we have 2 locations, use it to set the width
+        # If we have 2 locations, use it to set the width
+        # Note: second location can only be added after we've passed metad_interval batches
+        if self.metadynamics_idx >= self.metad_interval:
             if self.metadynamics_count == 1:
                 metad_width = torch.sqrt(F.mse_loss(self.metadynamics_loc[0], loc, reduction='mean'))
                 metad_width = metad_width.clamp(min=1e-4, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
-                self.metad_width.copy_(metad_width)
+                self.metad_width.copy_(metad_width.detach())
 
-        loss = 0.0
-        for i in range(self.metadynamics_count):
-            past_loc = self.metadynamics_loc[i].clone().detach() # Note: must use clone or the autograd engine will throw a tantrum
-            mse = F.mse_loss(loc, past_loc, reduction='mean') / (2 * self.metad_width.detach()**2)
-            mse = mse.clamp(max=10) # Clamp the mse to avoid numerical issues with torch.exp
-            loss = loss + self.metad_scale * torch.exp(-mse)
+            for i in range(self.metadynamics_count):
+                past_loc = self.metadynamics_loc[i].clone().detach() # Note: must use clone or the autograd engine will throw a tantrum
+                mse = F.mse_loss(loc, past_loc, reduction='mean') / (2 * self.metad_width.detach()**2)
+                mse = mse.clamp(max=10) # Clamp the mse to avoid numerical issues with torch.exp
+                loss = loss + self.metad_scale * torch.exp(-mse)
 
-        with torch.no_grad():
-            self.metadynamics_loc[self.metadynamics_count] = loc.detach()
-        self.metadynamics_count += 1
+            if self.metadynamics_idx % self.metad_interval == 0:
+                with torch.no_grad():
+                    self.metadynamics_loc[self.metadynamics_count] = loc.detach()
+                self.metadynamics_count += 1
+
+        self.metadynamics_idx += 1
 
         if self.metadynamics_count >= self.max_metad_length:
             self.reset_metadynamics()

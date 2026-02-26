@@ -11,7 +11,7 @@ batchsize:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 100
+  value: 500
 
 gpus:
   description: The number of GPUs to use for training
@@ -48,3 +48,11 @@ metad_scale:
   description: The scale of the metadynamics loss
   type: float
   value: 0.01
+metad_patience:
+  description: The number of epochs to wait before activating metadynamics if the training loss doesn't improve
+  type: int
+  value: 5
+metad_interval:
+  description: The number of batches between adding new locations to the metadynamics loss
+  type: int
+  value: 5

@@ -58,7 +58,7 @@ def main(args):
             trajectory_length=run.config['trajectory_length'],
             sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'], 
             lr=run.config['lr'],
-            metad_basis_size=run.config['metad_basis_size'], metad_scale=run.config['metad_scale']
+            metad_basis_size=run.config['metad_basis_size'], metad_scale=run.config['metad_scale'], metad_interval=run.config['metad_interval']
         )
 
         print("Measuring FLOPs...")
@@ -89,7 +89,7 @@ def main(args):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         #ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True, theme=RichProgressBarTheme(metrics_format=".3g"))
-        metad_callback = MetadynamicsOnPlateau(monitor="train_loss", patience=5)
+        metad_callback = MetadynamicsOnPlateau(monitor="train_loss", patience=run.config['metad_patience'])
 
         #model.activate_metadynamics()
         trainer = L.Trainer(
