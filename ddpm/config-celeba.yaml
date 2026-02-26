@@ -21,7 +21,7 @@ gpus:
 trajectory_length:
   description: The length of the diffusion trajectory
   type: int
-  value: 5000
+  value: 1000
 sinusoidal_embedding_size:
   description: The size of the sinusoidal embedding used in the model
   type: int
