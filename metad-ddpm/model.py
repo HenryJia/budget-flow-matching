@@ -216,13 +216,14 @@ class MetadynamicsDiffusionModel(L.LightningModule):
     def get_weight_basis(self):
         all_parameters = self.get_all_parameters()
         weight_basis = torch.randn(self.metad_basis_size, all_parameters.shape[0], device=all_parameters.device, dtype=all_parameters.dtype)
+        weight_basis = F.normalize(weight_basis, dim=-1)
         return weight_basis.detach()
 
     def reset_metadynamics(self):
         #print("Reseting metadynamics...")
         # We'll trigger this function if and when we want to start using metadynamics
         with torch.no_grad():
-            self.weight_basis.copy_(torch.randn_like(self.weight_basis))
+            self.weight_basis.copy_(F.normalize(torch.randn_like(self.weight_basis), dim=-1))
             self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
             self.metad_width.copy_(torch.tensor(1e-6))
         self.metadynamics_count = 0

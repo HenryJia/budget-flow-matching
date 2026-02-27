@@ -43,7 +43,7 @@ sample_frequency:
 metad_basis_size:
   description: The number of past locations to use for the metadynamics loss
   type: int
-  value: 16
+  value: 8
 metad_scale:
   description: The scale of the metadynamics loss
   type: float
