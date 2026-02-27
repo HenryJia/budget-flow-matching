@@ -225,7 +225,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         with torch.no_grad():
             self.weight_basis.copy_(F.normalize(torch.randn_like(self.weight_basis), dim=-1))
             self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
-            self.metad_width.copy_(torch.tensor(1e-6))
+            self.metad_width.copy_(torch.tensor(1e-8))
         self.metadynamics_count = 0
         self.metadynamics_idx = 0
 
@@ -264,7 +264,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         if self.metadynamics_idx >= self.metad_interval:
             if self.metadynamics_count == 1:
                 metad_width = torch.sqrt(F.mse_loss(self.metadynamics_loc[0], loc, reduction='mean')) / (self.metad_interval * 2)
-                metad_width = metad_width.clamp(min=1e-6, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
+                metad_width = metad_width.clamp(min=1e-8, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
                 self.metad_width.copy_(metad_width.detach())
 
             for i in range(self.metadynamics_count):
