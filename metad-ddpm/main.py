@@ -1,7 +1,7 @@
 import argparse
 
 import torch
-torch.autograd.set_detect_anomaly(True)
+torch.set_float32_matmul_precision('medium')
 import torch.utils.data as data
 import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
@@ -58,7 +58,8 @@ def main(args):
             trajectory_length=run.config['trajectory_length'],
             sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'], 
             lr=run.config['lr'],
-            metad_basis_size=run.config['metad_basis_size'], metad_scale=run.config['metad_scale'], metad_interval=run.config['metad_interval']
+            metad_basis_size=run.config['metad_basis_size'], metad_scale=run.config['metad_scale'],
+            metad_interval=run.config['metad_interval'], metad_sparsity=run.config['metad_sparsity']
         )
 
         print("Measuring FLOPs...")

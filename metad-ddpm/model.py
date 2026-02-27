@@ -175,9 +175,11 @@ class MetadynamicsDiffusionModel(L.LightningModule):
     def __init__(
             self, input_dim, input_channels,
             trajectory_length, sinusoidal_embedding_size, lr,
-            metad_basis_size=128, metad_scale=0.001, metad_interval=10
+            metad_basis_size=128, metad_scale=0.001, metad_interval=10, metad_sparsity=0.0001
             ):
         super(MetadynamicsDiffusionModel, self).__init__()
+
+        self.eps = 1e-12
 
         self.trajectory_length = trajectory_length
         self.sinusoidal_embedding_size = sinusoidal_embedding_size
@@ -186,6 +188,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         self.metad_basis_size = metad_basis_size
         self.metad_scale = metad_scale
         self.metad_interval = metad_interval
+        self.metad_sparsity = metad_sparsity
 
         # So because we're projecting linearly into a much lower dimension, running out of memory isn't an issue
         # However, our low dimensional projection will eventually run out of "space" to feasibly distinguish between different parameter configs
@@ -213,19 +216,23 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         all_parameters = torch.cat([p.view(-1) for p in all_parameters])
         return all_parameters
 
-    def get_weight_basis(self):
-        all_parameters = self.get_all_parameters()
-        weight_basis = torch.randn(self.metad_basis_size, all_parameters.shape[0], device=all_parameters.device, dtype=all_parameters.dtype)
-        weight_basis = F.normalize(weight_basis, dim=-1)
+    def get_weight_basis(self, old_basis=None):
+        if old_basis is not None:
+            weight_basis = torch.rand_like(old_basis)
+        else:
+            all_parameters = self.get_all_parameters()
+            weight_basis = torch.rand(self.metad_basis_size, all_parameters.shape[0], device=all_parameters.device, dtype=all_parameters.dtype)
+        weight_basis = (weight_basis < self.metad_sparsity).to(dtype=weight_basis.dtype)
+        weight_basis = weight_basis / torch.sum(weight_basis, dim=-1, keepdim=True).clamp(min=self.eps)
         return weight_basis.detach()
 
     def reset_metadynamics(self):
         #print("Reseting metadynamics...")
         # We'll trigger this function if and when we want to start using metadynamics
         with torch.no_grad():
-            self.weight_basis.copy_(F.normalize(torch.randn_like(self.weight_basis), dim=-1))
+            self.weight_basis.copy_(self.get_weight_basis(old_basis=self.weight_basis))
             self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
-            self.metad_width.copy_(torch.tensor(1e-8))
+            self.metad_width.copy_(torch.tensor(self.eps, device=self.metad_width.device, dtype=self.metad_width.dtype))
         self.metadynamics_count = 0
         self.metadynamics_idx = 0
 
@@ -264,7 +271,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         if self.metadynamics_idx >= self.metad_interval:
             if self.metadynamics_count == 1:
                 metad_width = torch.sqrt(F.mse_loss(self.metadynamics_loc[0], loc, reduction='mean')) / (self.metad_interval * 2)
-                metad_width = metad_width.clamp(min=1e-8, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
+                metad_width = metad_width.clamp(min=self.eps, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
                 self.metad_width.copy_(metad_width.detach())
 
             for i in range(self.metadynamics_count):

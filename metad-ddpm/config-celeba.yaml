@@ -56,3 +56,7 @@ metad_interval:
   description: The number of batches between adding new locations to the metadynamics loss
   type: int
   value: 5
+metad_sparsity:
+  description: The sparsity of the metadynamics projection
+  type: float
+  value: 0.0001
