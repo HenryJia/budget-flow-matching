@@ -216,15 +216,16 @@ class MetadynamicsDiffusionModel(L.LightningModule):
     def get_weight_basis(self):
         all_parameters = self.get_all_parameters()
         weight_basis = torch.randn(self.metad_basis_size, all_parameters.shape[0], device=all_parameters.device, dtype=all_parameters.dtype)
+        weight_basis = F.normalize(weight_basis, dim=-1)
         return weight_basis.detach()
 
     def reset_metadynamics(self):
         #print("Reseting metadynamics...")
         # We'll trigger this function if and when we want to start using metadynamics
         with torch.no_grad():
-            self.weight_basis.copy_(torch.randn_like(self.weight_basis))
-            #self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
-            self.metad_width.copy_(torch.tensor(1.0))
+            self.weight_basis.copy_(F.normalize(torch.randn_like(self.weight_basis), dim=-1))
+            self.metadynamics_loc.copy_(torch.zeros_like(self.metadynamics_loc))
+            self.metad_width.copy_(torch.tensor(1e-6))
         self.metadynamics_count = 0
         self.metadynamics_idx = 0
 
@@ -262,8 +263,8 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         # Note: second location can only be added after we've passed metad_interval batches
         if self.metadynamics_idx >= self.metad_interval:
             if self.metadynamics_count == 1:
-                metad_width = torch.sqrt(F.mse_loss(self.metadynamics_loc[0], loc, reduction='mean'))
-                metad_width = metad_width.clamp(min=1e-4, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
+                metad_width = torch.sqrt(F.mse_loss(self.metadynamics_loc[0], loc, reduction='mean')) / (self.metad_interval * 2)
+                metad_width = metad_width.clamp(min=1e-6, max=10.0) # Clamp the width to avoid numerical issues with divide by 0
                 self.metad_width.copy_(metad_width.detach())
 
             for i in range(self.metadynamics_count):
@@ -274,7 +275,7 @@ class MetadynamicsDiffusionModel(L.LightningModule):
 
             if self.metadynamics_idx % self.metad_interval == 0:
                 with torch.no_grad():
-                    self.metadynamics_loc[self.metadynamics_count] = loc.detach()
+                    self.metadynamics_loc[self.metadynamics_count].copy_(loc.clone().detach())
                 self.metadynamics_count += 1
 
         self.metadynamics_idx += 1
@@ -353,14 +354,14 @@ class MetadynamicsDiffusionModel(L.LightningModule):
         train_loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='mean')
         self.log("train_loss", train_loss, prog_bar=True)
 
-        if self.use_metadynamics.item() > 0:
-            metad_loss = self.metadynamics_loss()
-            self.log("metad_loss", metad_loss, prog_bar=True)
-            loss = train_loss + metad_loss
-        else:
-            self.log("metad_loss", 0.0, prog_bar=True)
-            loss = train_loss
+        metad_loss = self.metadynamics_loss() * self.use_metadynamics
+        self.log("metad_loss", metad_loss, prog_bar=True)
+
+        loss = train_loss + metad_loss
+
+        self.log("metad_width", self.metad_width.item(), prog_bar=True)
         self.log("total_loss", loss, prog_bar=True)
+
         return loss
 
     def forward(self, x, trajectory_length=None):
