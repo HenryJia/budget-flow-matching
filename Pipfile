@@ -13,6 +13,7 @@ lightning = "*"
 wandb = "*"
 gdown = "*"
 rich = "*"
+diffusers = "*"
 
 [requires]
 python_version = "3.14"

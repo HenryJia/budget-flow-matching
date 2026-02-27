@@ -10,165 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class AttentionStack(nn.Module):
-    def __init__(self, channels, num_heads, num_layers=4):
-        super(AttentionStack, self).__init__()
-
-        self.norm = nn.ModuleList([nn.LayerNorm(channels) for i in range(num_layers)])
-
-        self.attn = nn.ModuleList(
-            [nn.MultiheadAttention(channels, num_heads=num_heads, batch_first=True) for i in range(num_layers)]
-        )
-        self.linear = nn.ModuleList(
-            [nn.Sequential(nn.ELU(), nn.Linear(channels, channels), nn.ELU()) for i in range(num_layers)]
-        )
-
-    def forward(self, x):
-        batch_size, channels, height, width = x.shape
-        out = x.permute(0, 2, 3, 1).contiguous().view(batch_size, height * width, channels)
-        for attn, linear, norm in zip(self.attn, self.linear, self.norm):
-            x_attn = norm(out)
-            x_attn, _ = attn(x_attn, x_attn, x_attn)
-            out = out + linear(x_attn)
-        out = out.view(batch_size, height, width, channels).permute(0, 3, 1, 2)
-        return out
-
-# The specific U-Net architecture is not based on the paper, and is shamelessly adapted from
-# https://github.com/milesial/Pytorch-UNet
-class DoubleConv(nn.Module):
-
-    def __init__(self, in_channels, out_channels, sinusoidal_embedding_size=None, use_attention=False):
-        super().__init__()
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels), # The original paper uses GroupNorm but this is too memory heavy
-            nn.ELU()
-        )
-
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ELU()
-        )
-
-        self.sinusoidal_embedding_size = sinusoidal_embedding_size
-        if self.sinusoidal_embedding_size:
-            self.time_embedding_net = nn.Sequential(
-                nn.Linear(sinusoidal_embedding_size, out_channels*4),
-                nn.ELU(),
-                nn.Linear(out_channels*4, out_channels),
-                nn.ELU()
-            )
-
-        self.use_attention = use_attention
-        if use_attention:
-            self.attn = AttentionStack(out_channels, num_heads=4, num_layers=1)
-
-    def forward(self, x, time_embedding=None):
-        out = self.conv1(x)
-        if self.sinusoidal_embedding_size: # Add the time embedding in the middle of the 2 convolutions
-            out = out + self.time_embedding_net(time_embedding)[:, :, None, None]
-        out = self.conv2(out) + out # Residual connection as described in paper
-
-        if self.use_attention:
-            out = self.attn(out)
-
-        return out
-
-class Down(nn.Module):
-    """Downscaling with maxpool then double conv"""
-
-    def __init__(self, in_channels, out_channels, sinusoidal_embedding_size, use_attention=False):
-        super().__init__()
-        self.conv = DoubleConv(
-            in_channels, out_channels,
-            sinusoidal_embedding_size=sinusoidal_embedding_size, use_attention=use_attention
-            )
-
-    def forward(self, x, time_embedding):
-        out = F.avg_pool2d(x, kernel_size=2) # Downsample by a factor of 2
-        return self.conv(out, time_embedding)
-
-
-class Up(nn.Module):
-    """Upscaling then double conv"""
-
-    def __init__(self, in_channels, out_channels, bilinear=True, sinusoidal_embedding_size=None, use_attention=False):
-        super().__init__()
-
-        # if bilinear, use the normal convolutions to reduce the number of channels
-        if bilinear:
-            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConv(
-                in_channels, out_channels,
-                sinusoidal_embedding_size=sinusoidal_embedding_size, use_attention=use_attention
-                )
-        else:
-            self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
-            self.conv = DoubleConv(
-                in_channels, out_channels,
-                sinusoidal_embedding_size=sinusoidal_embedding_size, use_attention=use_attention
-                )
-
-    def forward(self, x1, x2, time_embedding=None):
-        x1 = self.up(x1)
-        # input is CHW
-        diffY = x2.size()[2] - x1.size()[2]
-        diffX = x2.size()[3] - x1.size()[3]
-
-        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                        diffY // 2, diffY - diffY // 2])
-        # if you have padding issues, see
-        # https://github.com/HaiyongJiang/U-Net-Pytorch-Unstructured-Buggy/commit/0e854509c2cea854e247a9c615f175f76fbb2e3a
-        # https://github.com/xiaopeng-liao/Pytorch-UNet/commit/8ebac70e633bac59fc22bb5195e513d5832fb3bd
-        x = torch.cat([x2, x1], dim=1)
-        return self.conv(x, time_embedding=time_embedding)
-
-
-class UNet(nn.Module):
-    def __init__(self, n_channels, sinusoidal_embedding_size, bilinear=False):
-        super(UNet, self).__init__()
-        self.n_channels = n_channels
-        self.bilinear = bilinear
-
-        self.inc = DoubleConv(n_channels, 8, sinusoidal_embedding_size=sinusoidal_embedding_size)
-        self.down = nn.ModuleList()
-        self.down.append(Down(8, 16, sinusoidal_embedding_size))
-        self.down.append(Down(16, 32, sinusoidal_embedding_size))
-        self.down.append(Down(32, 64, sinusoidal_embedding_size))
-        self.down.append(Down(64, 128, sinusoidal_embedding_size, use_attention=True))
-        self.down.append(Down(128, 256, sinusoidal_embedding_size, use_attention=True))
-        self.down.append(Down(256, 512, sinusoidal_embedding_size, use_attention=True))
-        factor = 2 if bilinear else 1
-        self.down.append(Down(512, 1024 // factor, sinusoidal_embedding_size, use_attention=True))
-
-        self.attn = AttentionStack(1024 // factor, num_heads=4, num_layers=4)
-
-        self.up = nn.ModuleList()
-        self.up.append(Up(1024, 512 // factor, bilinear, sinusoidal_embedding_size, use_attention=True))
-        self.up.append(Up(512, 256 // factor, bilinear, sinusoidal_embedding_size, use_attention=True))
-        self.up.append(Up(256, 128 // factor, bilinear, sinusoidal_embedding_size, use_attention=True))
-        self.up.append(Up(128, 64 // factor, bilinear, sinusoidal_embedding_size, use_attention=True))
-        self.up.append(Up(64, 32 // factor, bilinear, sinusoidal_embedding_size))
-        self.up.append(Up(32, 16 // factor, bilinear, sinusoidal_embedding_size))
-        self.up.append(Up(16, 8, bilinear, sinusoidal_embedding_size))
-        self.out = nn.Conv2d(8, n_channels, kernel_size=1)
-
-    def forward(self, x, time_embedding):
-        out = self.inc(x, time_embedding)
-
-        down_layers = [out]
-        for i, d in enumerate(self.down):
-            out = d(out, time_embedding)
-            if i < len(self.down) - 1: # Don't save the output of the last down layer as we won't have a skip connection for it
-                down_layers.append(out)
-        
-        out = self.attn(out)
-
-        for u in self.up:
-            out = u(out, down_layers.pop(), time_embedding)
-
-        return self.out(out)
+import diffusers
 
 
 class DiffusionModel(L.LightningModule):
@@ -185,7 +27,29 @@ class DiffusionModel(L.LightningModule):
         self.sinusoidal_embedding_size = sinusoidal_embedding_size
         self.lr = lr
 
-        self.reverse_diffusion_net = UNet(input_channels, sinusoidal_embedding_size, bilinear=False) 
+        self.reverse_diffusion_net = diffusers.UNet2DModel(
+            sample_size=input_dim,
+            in_channels=input_channels,
+            out_channels=input_channels,
+            layers_per_block=2,
+            block_out_channels=(32, 32, 64, 64, 512, 512),
+            down_block_types=(
+                "DownBlock2D",
+                "DownBlock2D",
+                "DownBlock2D",
+                "AttnDownBlock2D",# a ResNet downsampling block with spatial self-attention
+                "AttnDownBlock2D",
+                "AttnDownBlock2D",
+            ),
+            up_block_types=(
+                "AttnUpBlock2D",
+                "AttnUpBlock2D",
+                "AttnUpBlock2D",# a ResNet upsampling block with spatial self-attention
+                "UpBlock2D",
+                "UpBlock2D",
+                "UpBlock2D",
+            ),
+        ) 
 
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
         # We will use the same fixed beta schedule as described in section 4 of the paper
@@ -209,13 +73,8 @@ class DiffusionModel(L.LightningModule):
         return x_t, epsilon_forward
 
     def reverse_diffusion(self, x_t, t):
-        # We need a sinusoidal position embedding. This is briefly mentioned section 4.
-        # It is described in more detail in appendix B
-        pos_emb = torch.arange(self.sinusoidal_embedding_size//2, device=x_t.device).to(dtype=self.beta.dtype)[None, :]
-        pos_emb = torch.exp(torch.log(t[:, None].to(dtype=self.beta.dtype)) - math.log(1e4) * 2 * pos_emb / self.sinusoidal_embedding_size)
-        pos_emb = torch.cat([torch.sin(pos_emb), torch.cos(pos_emb)], dim=-1)
-
-        out = self.reverse_diffusion_net(x_t, pos_emb)
+        # Huggingface will take care of generating the time embedding fo us
+        out = self.reverse_diffusion_net(x_t, t, return_dict=False)[0]
 
         return out
 
