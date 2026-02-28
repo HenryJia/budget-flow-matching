@@ -16,3 +16,4 @@ class SampleCallback(Callback):
             samples = (samples + 1.0) / 2.0 # Rescale from [-1, 1] to [0, 1]
             samples = (samples * 255).clamp(0, 255).byte()
             trainer.logger.log_image(key="samples", images=[s for s in samples])
+            pl_module.train()

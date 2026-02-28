@@ -11,6 +11,7 @@ In case anyone wants to know where this list came from, it was given to me by Su
 ## List of papers
 - [x] [Deep Unsupervised Learning using Nonequilibrium Thermodynamics](#deep-unsupervised-learning-using-nonequilibrium-thermodynamics) [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
 - [x] [Denoising Diffusion Probabilistic Models (DDPM)](#denoising-diffusion-probabilistic-models-ddpm) [ArXiv](https://arxiv.org/abs/2006.11239)
+- [ ] Flow Matching for Generative Modeling [ArXiv](https://arxiv.org/abs/2210.02747)
 - [ ] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
 - [ ] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
 - [ ] Maximum Likelihood Training of Score-Based Diffusion Models [ArXiv](https://arxiv.org/abs/2101.09258)
@@ -26,8 +27,6 @@ In case anyone wants to know where this list came from, it was given to me by Su
 
 ## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
 ### Our code is in `nonequilibrium-thermodynamics/`
-
-#### Henry's rating for this paper: 3/10 - honestly, absolutely awful paper to try and implement. But, the mathematical framework is extremely useful for getting a good grasp of the foundations of diffusion models, so it's worth it for that.
 
 This paper is interesting. The maths is very focused on figuring out a lowerbound kind of like the variational lowerbound in VAEs. But, there are a fair few problems. For starters, the architecture they use also feels quite overcomplicated for the toy problems which they train on (CIFAR and MNIST).
 
@@ -49,8 +48,6 @@ Here's a sample of the generated MNIST digits after 1000 epochs: (TODO add sampl
 
 ## Denoising Diffusion Probabilistic Models (DDPM)
 ### Our code is in `ddpm/`
-
-#### Henry's rating for this paper: 10/10 - I fucking love this paper
 
 This paper is honestly a lot better written than the nonequilibrium thermodynamics one as far as implementation is concerned. The maths is a lot more straightforward, and the training process is a lot more stable. Granted though, it doesn't cover the mathematical background as much.
 
