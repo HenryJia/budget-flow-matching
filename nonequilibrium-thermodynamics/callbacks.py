@@ -7,7 +7,7 @@ class SampleCallback(Callback):
         self.num_samples = num_samples
 
     def on_train_epoch_end(self, trainer, pl_module):
-        model.eval()
+        pl_module.eval()
         # Sample from the model at the end of each epoch and log the samples to wandb
         samples = pl_module.forward(torch.randn(self.num_samples, 1, 32, 32).to(device=pl_module.device))
         samples = (samples * 255).clamp(0, 255).byte()
@@ -22,4 +22,4 @@ class SampleCallback(Callback):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
         samples.save(os.path.join(self.output_dir, f"epoch_{trainer.current_epoch}.png"))
-        model.train()
+        pl_module.train()
