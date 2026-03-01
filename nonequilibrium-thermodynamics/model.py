@@ -5,106 +5,13 @@ import torchvision as tv
 import torch.nn.functional as F
 import lightning as L
 
-
-# The specific U-Net architecture is not based on the paper, and is shamelessly adapted from
-# https://github.com/milesial/Pytorch-UNet
-class DoubleConv(nn.Module):
-
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.double_conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels), # The original paper uses GroupNorm but this is too memory heavy
-            nn.ELU(),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ELU()
-        )
-
-    def forward(self, x):
-        return self.double_conv(x)
-
-
-class Down(nn.Module):
-    """Downscaling with maxpool then double conv"""
-
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.pool_conv = nn.Sequential(
-            nn.AvgPool2d(2),
-            DoubleConv(in_channels, out_channels)
-        )
-
-    def forward(self, x):
-        return self.pool_conv(x)
-
-
-class Up(nn.Module):
-    """Upscaling then double conv"""
-
-    def __init__(self, in_channels, out_channels, bilinear=True):
-        super().__init__()
-
-        # if bilinear, use the normal convolutions to reduce the number of channels
-        if bilinear:
-            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-            self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
-        else:
-            self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
-            self.conv = DoubleConv(in_channels, out_channels)
-
-    def forward(self, x1, x2):
-        x1 = self.up(x1)
-        # input is CHW
-        diffY = x2.size()[2] - x1.size()[2]
-        diffX = x2.size()[3] - x1.size()[3]
-
-        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                        diffY // 2, diffY - diffY // 2])
-        # if you have padding issues, see
-        # https://github.com/HaiyongJiang/U-Net-Pytorch-Unstructured-Buggy/commit/0e854509c2cea854e247a9c615f175f76fbb2e3a
-        # https://github.com/xiaopeng-liao/Pytorch-UNet/commit/8ebac70e633bac59fc22bb5195e513d5832fb3bd
-        x = torch.cat([x2, x1], dim=1)
-        return self.conv(x)
-
-
-class UNet(nn.Module):
-    def __init__(self, input_channels, output_channels, bilinear=False):
-        super(UNet, self).__init__()
-        self.input_channels = input_channels
-        self.output_channels = output_channels
-        self.bilinear = bilinear
-
-        self.inc = DoubleConv(input_channels, 64)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 256)
-        self.down3 = Down(256, 512)
-        factor = 2 if bilinear else 1
-        self.down4 = Down(512, 1024 // factor)
-        self.up1 = Up(1024, 512 // factor, bilinear)
-        self.up2 = Up(512, 256 // factor, bilinear)
-        self.up3 = Up(256, 128 // factor, bilinear)
-        self.up4 = Up(128, 64, bilinear)
-        self.out = nn.Conv2d(64, output_channels, kernel_size=1)
-
-    def forward(self, x):
-        x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
-        return self.out(x)
-
+import diffusers
 
 class DiffusionModel(L.LightningModule):
     def __init__(
-            self, input_dim, input_channels, layers, hidden_channels,
-            trajectory_length, step1_beta, temporal_basis_size,
-            lr=1e-3
+            self, input_dim, input_channels,
+            trajectory_length, step1_beta,
+            lr=1e-4
             ):
         super(DiffusionModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
@@ -112,15 +19,29 @@ class DiffusionModel(L.LightningModule):
 
         self.trajectory_length = trajectory_length
         self.step1_beta = step1_beta
-        self.temporal_basis_size = temporal_basis_size
         self.lr = lr
 
-        output_channels = input_channels * 2 * temporal_basis_size
+        output_channels = input_channels + 1
 
-        # For now, we'll just use a simple convolutional network for the reverse diffusion process
-        # We can tune this later to be more efficient and better suited for the task
-        self.reverse_diffusion_net = UNet(input_channels, output_channels, bilinear=False)
-
+        self.reverse_diffusion_net = diffusers.UNet2DModel(
+            sample_size=input_dim,
+            in_channels=input_channels,
+            out_channels=output_channels,
+            layers_per_block=2,
+            block_out_channels=(64, 64, 512, 512),
+            down_block_types=(
+                "DownBlock2D",
+                "DownBlock2D",
+                "AttnDownBlock2D",# a ResNet downsampling block with spatial self-attention
+                "AttnDownBlock2D",
+            ),
+            up_block_types=(
+                "AttnUpBlock2D",
+                "AttnUpBlock2D",# a ResNet upsampling block with spatial self-attention
+                "UpBlock2D",
+                "UpBlock2D",
+            ),
+        ) 
         # Note: The beta diffusion rate is learnable
         self.beta = nn.Parameter(self.generate_beta(step1_beta))
 
@@ -173,7 +94,7 @@ class DiffusionModel(L.LightningModule):
         channels = x_noisy.shape[1]
 
         # Step 1: Run the reverse diffusion process through the network to get the predicted noise
-        z = self.reverse_diffusion_net(x_noisy)
+        z = self.reverse_diffusion_net(x_noisy, t, return_dict=False)[0]
 
         # Now, the paper does something a little more complicated here with multiplying by some r(x^(t))
         # But, they also say that for all their experiments, r(x^(t)) is constant. So I'm going to ignore it for now
@@ -181,19 +102,10 @@ class DiffusionModel(L.LightningModule):
         # In addition, they use a somewhat odd formula for the reverse diffusion process for images in the Appendix (eq 64 and 65)
         # I don't entirely understand why to be honest
         # All in all, I'm going to ignore all those complications for now, and just use a simple formula for the reverse diffusion process
-        mu = z[:, :channels * self.temporal_basis_size, :, :].view(-1, self.temporal_basis_size, channels, z.shape[2], z.shape[3])
-        sigma = z[:, channels * self.temporal_basis_size:, :, :].view(-1, self.temporal_basis_size, channels, z.shape[2], z.shape[3])
-        sigma = torch.mean(sigma, dim=(2, 3, 4)) # Only one sigma per sample
+        mu = z[:, :channels, :, :]
+        sigma = z[:, channels, :, :]
+        sigma = torch.mean(sigma, dim=(1, 2)) # Only one sigma per sample
 
-        # Use a softmax fucntion centred at t to generate the temporal basis functions
-        # This is not quite the same as the reference implementation, but it is simple, dumb, and hopefully will work
-        diff = torch.arange(0, self.temporal_basis_size, step=1.0, device=z.device) - t.view(x_noisy.shape[0], 1).float()
-
-        # This will give us a temporal basis function that peaks near t
-        temporal_basis = 1 - F.softmax(diff**2, dim=1)
-
-        mu = torch.einsum('btchw,bt->bchw', mu, temporal_basis)
-        sigma = torch.einsum('bt,bt->b', sigma, temporal_basis)
         beta = torch.clamp(torch.gather(F.sigmoid(self.beta), dim=0, index=t), min=self.step1_beta, max=1.0-self.step1_beta)
 
         # The paper does this, but I'm not sure why

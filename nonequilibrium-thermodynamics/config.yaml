@@ -18,14 +18,6 @@ gpus:
   type: int
   value: 2
 
-layers:
-  description: The number of layers in the model
-  type: int
-  value: 8
-hidden_channels:
-  description: The number of hidden channels in the model
-  type: int
-  value: 64
 trajectory_length:
   description: The length of the diffusion trajectory
   type: int
@@ -34,10 +26,6 @@ step1_beta:
   description: The beta value for the first step of the diffusion process
   type: float
   value: 0.0001
-temporal_basis_size:
-  description: The size of the temporal basis used in the model
-  type: int
-  value: 128
 lr:
   description: The learning rate for training the model
   type: float

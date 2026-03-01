@@ -18,8 +18,12 @@ import wandb
 def main(args):
     with wandb.init(config=args.config, project="nonequilibrium-thermodynamics") as run:
         if run.config['dataset'] == "MNIST":
-            dataset = tv.datasets.MNIST(root="./data", download=True, transform=tv.transforms.ToTensor())
-            input_dim = (28, 28)
+            transforms = tv.transforms.Compose([
+                tv.transforms.Resize((32, 32)),
+                tv.transforms.ToTensor(),
+            ])
+            dataset = tv.datasets.MNIST(root="./data", download=True, transform=transforms)
+            input_dim = (32, 32)
             input_channels = 1
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
@@ -29,11 +33,8 @@ def main(args):
         model = DiffusionModel(
             input_dim=input_dim,
             input_channels=input_channels,
-            layers=run.config['layers'],
-            hidden_channels=run.config['hidden_channels'],
             trajectory_length=run.config['trajectory_length'],
             step1_beta=run.config['step1_beta'],
-            temporal_basis_size=run.config['temporal_basis_size'],
             lr=run.config['lr']
         )
 
