@@ -117,7 +117,7 @@ class DiffusionModel(L.LightningModule):
 
         # Based on equation 14 and its accompanying explanation, we can do this simple loss or the more complicated one in equation 12
         # The paper suggests that the simple one works better, so we have no reason to do the more complicated one
-        loss = F.mse_loss(epsilon_reverse, epsilon_forward, reduction='mean')
+        loss = F.mse_loss(epsilon_reverse, epsilon_forward.detach(), reduction='mean')
 
         self.log("train_loss", loss, prog_bar=True)
         return loss
