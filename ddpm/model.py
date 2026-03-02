@@ -90,7 +90,7 @@ class DiffusionModel(L.LightningModule):
         coef = 1 / torch.sqrt(alpha_t)
         coef_eps = beta_t / torch.sqrt(1 - alpha_bar)
         out = coef[:, None, None, None] * (x_t - coef_eps[:, None, None, None] * epsilon_reverse)
-        out = out + torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
+        out = out + (t > 0)[:, None, None, None] * torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
 
         return out
 
