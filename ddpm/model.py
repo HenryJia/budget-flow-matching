@@ -30,7 +30,7 @@ class DiffusionModel(L.LightningModule):
             in_channels=input_channels,
             out_channels=input_channels,
             layers_per_block=2,
-            block_out_channels=(32, 32, 64, 64, 512, 512),
+            block_out_channels=(32, 32, 64, 256, 512, 512),
             down_block_types=(
                 "DownBlock2D",
                 "DownBlock2D",
