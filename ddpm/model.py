@@ -106,7 +106,7 @@ class DiffusionModel(L.LightningModule):
         # Note: We skip t=0 as the reverse process is fixed at the first step
         # Keep the same t for the whole minibatch. I'm a little uncertain about this
         # But, it is how the original reference implemntation in theano does it
-        t = torch.randint(low=1, high=self.trajectory_length, size=(x.shape[0],), device=x.device)
+        t = torch.randint(low=0, high=self.trajectory_length, size=(x.shape[0],), device=x.device)
 
         # Step 2: Run the forward diffusion process to get the noisy input up to timestep t, the mean and variance of the noise, and the timestep
         x_t, epsilon_forward = self.forward_diffusion(x, t)
