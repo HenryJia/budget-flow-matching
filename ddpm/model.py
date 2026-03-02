@@ -57,13 +57,10 @@ class DiffusionModel(L.LightningModule):
     def forward_diffusion(self, x_0, t):
         # Add noise to the input according to the beta schedule
 
-        # Note: We will maintain notation consistency with the paper here.
-        # But, it will mean that we have some inconsistent notation across different paper implementations.
-        # Readers are advised to keep the paper handy for reference
         alpha = 1 - self.beta
         alpha_bar = torch.gather(torch.cumprod(alpha, dim=0), dim=0, index=t)
-        beta_t = torch.gather(self.beta, dim=0, index=t)
-        alpha_t = torch.gather(alpha, dim=0, index=t)
+        #beta_t = torch.gather(self.beta, dim=0, index=t)
+        #alpha_t = torch.gather(alpha, dim=0, index=t)
 
         epsilon_forward = torch.randn_like(x_0)
         x_t = x_0 * torch.sqrt(alpha_bar)[:, None, None, None] + epsilon_forward * torch.sqrt(1 - alpha_bar)[:, None, None, None]
@@ -117,12 +114,12 @@ class DiffusionModel(L.LightningModule):
         self.log("train_loss", loss, prog_bar=True)
         return loss
 
-    def forward(self, x, trajectory_length=None):
+    def forward(self, x):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
         # Step 1: Draw a sample from the prior distribution
-        x_t = torch.randn_like(x, dtype=self.beta.dtype)
+        x_t = torch.randn_like(x)
 
         # Step 2: Run the reverse diffusion process for the whole trajectory
         if trajectory_length is None:
