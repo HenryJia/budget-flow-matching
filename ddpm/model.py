@@ -122,12 +122,10 @@ class DiffusionModel(L.LightningModule):
         x_t = torch.randn_like(x)
 
         # Step 2: Run the reverse diffusion process for the whole trajectory
-        if trajectory_length is None:
-            trajectory_length = self.trajectory_length
         # Note: without no_grad torch will try to store all the intermediate steps for backprop
         # Which would blow up the memory. Ignore gradients for sampling.
         with torch.no_grad():
-            for t in range(trajectory_length - 1, -1, -1):
+            for t in range(self.trajectory_length - 1, -1, -1):
                 x_t = self.sample(x_t, t * torch.ones(x_t.shape[0], device=x_t.device, dtype=torch.long))
         return x_t
 
