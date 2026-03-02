@@ -43,7 +43,8 @@ class DiffusionModel(L.LightningModule):
                 "UpBlock2D",
                 "UpBlock2D",
             ),
-        ) 
+        )
+        self.out_conv = nn.Conv2d(input_channels, input_channels, kernel_size=1)
 
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
         # We will use the same fixed beta schedule as described in section 4 of the paper
@@ -65,6 +66,7 @@ class DiffusionModel(L.LightningModule):
     def reverse_diffusion(self, x_t, t):
         # Huggingface will take care of generating the time embedding fo us
         out = self.reverse_diffusion_net(x_t, t.to(dtype=x_t.dtype), return_dict=False)[0]
+        out = self.out_conv(out)
 
         return out
 
