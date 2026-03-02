@@ -82,9 +82,10 @@ class DiffusionModel(L.LightningModule):
         coef = torch.pow(alpha_t, -0.5)
         coef_eps = beta_t / torch.sqrt(1 - alpha_bar)
         out = coef[:, None, None, None] * (x_t - coef_eps[:, None, None, None] * epsilon_reverse)
-        out = out + (t > 0)[:, None, None, None] * torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
 
-        return out
+        z = (t > 0)[:, None, None, None] * torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
+        out = out + z
+        return out.clamp(-1, 1) # Honestly, the paper doesn't mention this, but it seems necessary
 
     def training_step(self, batch, batch_idx):
         x = batch[0]
@@ -110,13 +111,11 @@ class DiffusionModel(L.LightningModule):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
-        # Step 1: Draw a sample from the prior distribution
-        x_t = torch.randn_like(x)
-
-        # Step 2: Run the reverse diffusion process for the whole trajectory
-        # Note: without no_grad torch will try to store all the intermediate steps for backprop
-        # Which would blow up the memory. Ignore gradients for sampling.
         with torch.no_grad():
+            # Step 1: Draw a sample from the prior distribution
+            x_t = torch.randn_like(x)
+
+            # Step 2: Run the reverse diffusion process for the whole trajectory
             for t in range(self.trajectory_length - 1, -1, -1):
                 x_t = self.sample(x_t, t * torch.ones(x_t.shape[0], device=x_t.device, dtype=torch.long))
         return x_t
