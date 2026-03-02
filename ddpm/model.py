@@ -58,9 +58,7 @@ class DiffusionModel(L.LightningModule):
         # Add noise to the input according to the beta schedule
 
         alpha = 1 - self.beta
-        alpha_bar = torch.gather(torch.cumprod(alpha, dim=0), dim=0, index=t)
-        #beta_t = torch.gather(self.beta, dim=0, index=t)
-        #alpha_t = torch.gather(alpha, dim=0, index=t)
+        alpha_bar = torch.cumprod(alpha, dim=0)[t]
 
         epsilon_forward = torch.randn_like(x_0)
         x_t = x_0 * torch.sqrt(alpha_bar)[:, None, None, None] + epsilon_forward * torch.sqrt(1 - alpha_bar)[:, None, None, None]
@@ -78,9 +76,9 @@ class DiffusionModel(L.LightningModule):
         epsilon_reverse = self.reverse_diffusion(x_t, t)
 
         alpha = 1 - self.beta
-        alpha_bar = torch.gather(torch.cumprod(alpha, dim=0), dim=0, index=t)
-        alpha_t = torch.gather(alpha, dim=0, index=t)
-        beta_t = torch.gather(self.beta, dim=0, index=t)
+        alpha_bar = torch.cumprod(alpha, dim=0)[t]
+        alpha_t = alpha[t]
+        beta_t = self.beta[t]
 
         # Described in section 3.2, we can either choose
         beta_tilde = (1 - alpha_bar / alpha_t) / (1 - alpha_bar) * beta_t # equation 7
