@@ -79,7 +79,7 @@ class DiffusionModel(L.LightningModule):
         #sigma2_t = beta_tilde
         sigma2_t = beta_t
 
-        coef = 1 / torch.sqrt(alpha_t)
+        coef = torch.pow(alpha_t, -0.5)
         coef_eps = beta_t / torch.sqrt(1 - alpha_bar)
         out = coef[:, None, None, None] * (x_t - coef_eps[:, None, None, None] * epsilon_reverse)
         out = out + (t > 0)[:, None, None, None] * torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
@@ -89,7 +89,7 @@ class DiffusionModel(L.LightningModule):
     def training_step(self, batch, batch_idx):
         x = batch[0]
 
-        # Step 1: Select a timestep in [1, trajectory_length - 1]
+        # Step 1: Select a timestep
         t = torch.randint(low=0, high=self.trajectory_length, size=(x.shape[0],), device=x.device)
 
         # Step 2: Run the forward diffusion process to get the noisy input up to timestep t, the mean and variance of the noise, and the timestep
