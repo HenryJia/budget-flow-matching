@@ -44,7 +44,6 @@ class DiffusionModel(L.LightningModule):
                 "UpBlock2D",
             ),
         )
-        self.out_conv = nn.Conv2d(input_channels, input_channels, kernel_size=1)
 
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
         # We will use the same fixed beta schedule as described in section 4 of the paper
@@ -54,8 +53,6 @@ class DiffusionModel(L.LightningModule):
 
 
     def forward_diffusion(self, x_0, t):
-        # Add noise to the input according to the beta schedule
-
         alpha_bar = self.alpha_bar[t]
 
         epsilon_forward = torch.randn_like(x_0)
@@ -66,7 +63,6 @@ class DiffusionModel(L.LightningModule):
     def reverse_diffusion(self, x_t, t):
         # Huggingface will take care of generating the time embedding fo us
         out = self.reverse_diffusion_net(x_t, t.to(dtype=x_t.dtype), return_dict=False)[0]
-        out = self.out_conv(out)
 
         return out
 
@@ -129,5 +125,3 @@ class DiffusionModel(L.LightningModule):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
-        #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, cooldown=100, min_lr=2e-6)
-        #return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "train_loss", "frequency": 1, "interval": "epoch"}
