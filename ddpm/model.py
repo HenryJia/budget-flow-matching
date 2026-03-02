@@ -52,13 +52,14 @@ class DiffusionModel(L.LightningModule):
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
         # We will use the same fixed beta schedule as described in section 4 of the paper
         self.beta = nn.Parameter(torch.linspace(start=1e-4, end=0.02, steps=trajectory_length), requires_grad=False)
+        self.alpha = nn.Parameter(1 - self.beta, requires_grad=False)
+        self.alpha_bar = nn.Parameter(torch.cumprod(self.alpha, dim=0), requires_grad=False)
 
 
     def forward_diffusion(self, x_0, t):
         # Add noise to the input according to the beta schedule
 
-        alpha = 1 - self.beta
-        alpha_bar = torch.cumprod(alpha, dim=0)[t]
+        alpha_bar = self.alpha_bar[t]
 
         epsilon_forward = torch.randn_like(x_0)
         x_t = x_0 * torch.sqrt(alpha_bar)[:, None, None, None] + epsilon_forward * torch.sqrt(1 - alpha_bar)[:, None, None, None]
@@ -75,9 +76,8 @@ class DiffusionModel(L.LightningModule):
         # Sample a single step of the reverse diffusion process as described in Algorithm 2 of the paper
         epsilon_reverse = self.reverse_diffusion(x_t, t)
 
-        alpha = 1 - self.beta
-        alpha_bar = torch.cumprod(alpha, dim=0)[t]
-        alpha_t = alpha[t]
+        alpha_bar = self.alpha_bar[t]
+        alpha_t = self.alpha[t]
         beta_t = self.beta[t]
 
         # Described in section 3.2, we can either choose
