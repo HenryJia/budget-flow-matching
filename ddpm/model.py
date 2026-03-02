@@ -83,9 +83,12 @@ class DiffusionModel(L.LightningModule):
         coef_eps = beta_t / torch.sqrt(1 - alpha_bar)
         out = coef[:, None, None, None] * (x_t - coef_eps[:, None, None, None] * epsilon_reverse)
 
+        # Note: The paper doesn't mention clamping the output at all
+        # But it is done in the reference implementation
+        # From my experiments, it seems to be crucial otherwise the colour hue can drift in very weird ways
         z = (t > 0)[:, None, None, None] * torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
-        out = out + z
-        return out.clamp(-1, 1) # Honestly, the paper doesn't mention this, but it seems necessary
+        out = out.clamp(-1, 1) + z
+        return out
 
     def training_step(self, batch, batch_idx):
         x = batch[0]
