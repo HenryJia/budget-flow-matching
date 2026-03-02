@@ -6,10 +6,6 @@ import torchvision as tv
 import torch.nn.functional as F
 import lightning as L
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 import diffusers
 
 

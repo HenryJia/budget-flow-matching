@@ -1,6 +1,7 @@
 import argparse
 
 import torch
+torch.set_float32_matmul_precision('medium')
 import torch.utils.data as data
 import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
