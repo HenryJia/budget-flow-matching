@@ -16,15 +16,13 @@ import diffusers
 class DiffusionModel(L.LightningModule):
     def __init__(
             self, input_dim, input_channels,
-            trajectory_length, sinusoidal_embedding_size,
-            lr
+            trajectory_length, lr
             ):
         super(DiffusionModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
         # The reference implementation does a fair bit of more complicated stuff which I think is a tad esoteric
 
         self.trajectory_length = trajectory_length
-        self.sinusoidal_embedding_size = sinusoidal_embedding_size
         self.lr = lr
 
         self.reverse_diffusion_net = diffusers.UNet2DModel(

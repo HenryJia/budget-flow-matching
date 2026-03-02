@@ -22,10 +22,6 @@ trajectory_length:
   description: The length of the diffusion trajectory
   type: int
   value: 1000
-sinusoidal_embedding_size:
-  description: The size of the sinusoidal embedding used in the model
-  type: int
-  value: 128
 lr: # The paper suggests that this is a good learning rate to use for smaller images. For larger images they used 2e-5
   description: The learning rate for training the model
   type: float

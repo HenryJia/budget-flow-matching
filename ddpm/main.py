@@ -54,7 +54,6 @@ def main(args):
             input_dim=input_dim,
             input_channels=input_channels,
             trajectory_length=run.config['trajectory_length'],
-            sinusoidal_embedding_size=run.config['sinusoidal_embedding_size'],
             lr=run.config['lr']
         )
 
