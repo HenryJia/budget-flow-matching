@@ -60,12 +60,12 @@ def main(args):
         print("Measuring FLOPs...")
         flops = measure_flops(
             model,
-            lambda: model(torch.randn(1, input_channels, *input_dim), trajectory_length=1)
+            lambda: model.reverse_diffusion_net(torch.randn(1, input_channels, *input_dim), t=torch.tensor([0])),
         )
         print(f"Forward Diffusion FLOPs: {flops / 1e9:.2f} GFLOPs")
         flops = measure_flops(
             model,
-            lambda: model(torch.randn(1, input_channels, *input_dim), trajectory_length=1),
+            lambda: model.reverse_diffusion_net(torch.randn(1, input_channels, *input_dim), t=torch.tensor([0])),
             lambda _: model.training_step((torch.randn(1, input_channels, *input_dim), None), 0)
         )
         print(f"Training Step FLOPs: {flops / 1e9:.2f} GFLOPs")
