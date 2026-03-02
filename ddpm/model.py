@@ -25,7 +25,6 @@ class DiffusionModel(L.LightningModule):
         self.trajectory_length = trajectory_length
         self.lr = lr
 
-        self.norm = nn.BatchNorm2d(input_channels)
         self.reverse_diffusion_net = diffusers.UNet2DModel(
             sample_size=input_dim,
             in_channels=input_channels,
@@ -70,8 +69,7 @@ class DiffusionModel(L.LightningModule):
 
     def reverse_diffusion(self, x_t, t):
         # Huggingface will take care of generating the time embedding fo us
-        out = self.norm(x_t)
-        out = self.reverse_diffusion_net(out, t, return_dict=False)[0]
+        out = self.reverse_diffusion_net(x_t, t, return_dict=False)[0]
 
         return out
 
