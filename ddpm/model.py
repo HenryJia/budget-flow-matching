@@ -75,9 +75,9 @@ class DiffusionModel(L.LightningModule):
         beta_t = self.beta[t]
 
         # Described in section 3.2, we can either choose
-        #beta_tilde = (1 - alpha_bar / alpha_t) / (1 - alpha_bar) * beta_t # equation 7
-        #sigma2_t = beta_tilde
-        sigma2_t = beta_t
+        beta_tilde = (1 - alpha_bar / alpha_t) / (1 - alpha_bar) * beta_t # equation 7
+        sigma2_t = beta_tilde
+        #sigma2_t = beta_t
 
         coef = torch.pow(alpha_t, -0.5)
         coef_eps = beta_t / torch.sqrt(1 - alpha_bar)
