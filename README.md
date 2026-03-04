@@ -4,13 +4,18 @@ So, I previously worked at Midjourney, but decided to do a PhD in something comp
 
 As always, a good way to polish off the rust and brush up on everything is to try and build stuff from scratch.
 
-So, this repository contains a set of well commented implementations, as close to the reference implementation as is reasonable of various keystone diffusion papers.
+So, this repository contains a set of well commented implementations, built to run reasonably efficiently whilst being as minimal as possible.
 
-In case anyone wants to know where this list came from, it was given to me by Sully, an old friend of mine who previously worked at OpenAI.
+Please feel free to use this repository as a reference for building your own diffusion models, or just to understand how they work. The code should be readable and well commented, so it should be easy to follow along.
 
-## List of papers
-- [x] [Deep Unsupervised Learning using Nonequilibrium Thermodynamics](#deep-unsupervised-learning-using-nonequilibrium-thermodynamics) [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
-- [x] [Denoising Diffusion Probabilistic Models (DDPM)](#denoising-diffusion-probabilistic-models-ddpm) [ArXiv](https://arxiv.org/abs/2006.11239)
+Do note that whilst the different implementations share various bits of code, they are all implemented independently to improve readability of each implementation. So, there will be a lot of code duplication.
+
+Acknowledgements: I want to give a shoutout to Sully, an old friend and former researcher at OpenAI, who got me started and gave me a list of papers to read and implement. I was also guided in what papers to read by the good people of the Eleuther.AI discord and the Yannic Kilcher discord.
+
+
+## Implementations
+- [x] [Deep Unsupervised Learning using Nonequilibrium Thermodynamics](#deep-unsupervised-learning-using-nonequilibrium-thermodynamics) )
+- [x] [Denoising Diffusion Probabilistic Models (DDPM)](#denoising-diffusion-probabilistic-models-ddpm) 
 - [ ] Flow Matching for Generative Modeling [ArXiv](https://arxiv.org/abs/2210.02747)
 - [ ] Generative Modeling by Estimating Gradients of the Data Distribution [ArXiv](https://arxiv.org/abs/1907.05600)
 - [ ] Score-Based Generative Modeling through Stochastic Differential Equations [ArXiv](https://arxiv.org/abs/2011.13456)
@@ -23,31 +28,18 @@ In case anyone wants to know where this list came from, it was given to me by Su
 - [ ] High-Resolution Image Synthesis with Latent Diffusion Models [ArXiv](https://arxiv.org/abs/2112.10752)
 
 
-# Implementation Notes and Empirical Observations
-
-## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
-### Our code is in `nonequilibrium-thermodynamics/`
-
-This paper is interesting. The maths is very focused on figuring out a lowerbound kind of like the variational lowerbound in VAEs. But, there are a fair few problems. For starters, the architecture they use also feels quite overcomplicated for the toy problems which they train on (CIFAR and MNIST).
-
-The training set up is also kind of hacky. There's a fair few calculations they use in the reference implementation which aren't mentioned in the paper. whilst they're not too complicated to derive by hand, it is a bit of a pain. There's also some tricks they use to make the thing train, which are mentioned in the paper but aren't really explained as to why.
-
-Training this thing is still an absolute pain in the arse. Normally models on MNIST can train in a few epochs, but this one takes like 200 to be able to generate anything vaguely resembling a digit. It also seems to be quite particular about the learning rate. Too high and it seems to struggle to converge. You go from one epoch where it generates noisy trash to the next where it seems to be vaguely trying to generate a digit. Set the learning rate too low and it optimises very slowly.
-
-A workaround seems to be to use a exponentially decaying learning rate, so that later on it finetunes the model.
-
-My intuition of why this is the case is that the noise deviations the model is trying to learn are very small. So a larger update step will throw the model optimisation off so far that it might effectively have teleported somewhere alien in the loss landscape, and has to find a whole new local minima to converge to.
-
-I think this also explains why training takes so long. The old reference implementation is in Theano and they run for around 850 epochs. I think the finetuning element of this diffusion model is just a slow and tedious process.
-
-This being said, there is one interesting aspect of the loss function for this paper. It's clear that the KL term is the main driver which minimises the denoising error. But, the entropy terms are interesting. If we initialise the diffusion rate betas to be smaller initially, the term H_q(X_T | X_0), the entropy of the noise distribution at the end, will be smaller than a standard Gaussian. This means that the model will slowly increase the diffusion rate betas to eventually match the entropy of a standard Gaussian. This is interesting because it means that the model is effectively learning to increase the noise level over time, which is kind of like a curriculum learning strategy. The model starts off with an easier task of denoising less noisy images, and then gradually increases the difficulty as it learns.
-
-All in all, implementing this thing is a neat exercise, but it kind of sucks. It's overcomplicated and kind of fragile to train. It's not practical, but it is useful for understanding the variational lowerbound.
-
-Here's a sample of the generated MNIST digits after 1000 epochs: (TODO add sample)
+# Implementations
 
 ## Denoising Diffusion Probabilistic Models (DDPM)
-### Our code is in `ddpm/`
+### Our code is in `ddpm/` [Link](https://github.com/HenryJia/diffusion-classroom/tree/main/ddpm)
+#### [ArXiv](https://arxiv.org/abs/2006.11239) [Author's implementation](https://github.com/hojonathanho/diffusion/tree/master)
+
+## Deep Unsupervised Learning using Nonequilibrium Thermodynamics
+### Our code is in `nonequilibrium-thermodynamics/` [Link](https://github.com/HenryJia/diffusion-classroom/tree/main/nonequilibrium-thermodynamics)
+#### [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
+
+
+
 
 This paper is honestly a lot better written than the nonequilibrium thermodynamics one as far as implementation is concerned. The maths is a lot more straightforward, and the training process is a lot more stable. Granted though, it doesn't cover the mathematical background as much.
 
