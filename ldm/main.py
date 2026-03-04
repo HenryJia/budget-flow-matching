@@ -14,6 +14,8 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.fabric.utilities.throughput import measure_flops
 
 from diffusers import AutoencoderDC
+import datasets
+
 
 from model import LatentDiffusionModel
 from callbacks import SampleCallback
@@ -46,6 +48,8 @@ def main(args):
             latent_channels = 32
             prompt_encoder = None
             prompt_embedding_dim = 512 # Basically just a random number to fit the arch. It's not used here
+        elif run.config['dataset'] == "PublicDomain":
+
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
