@@ -39,6 +39,7 @@ def main(args):
             ])
             dataset = tv.datasets.ImageFolder(root='./data/celebahq256_imgs/train', transform=transforms)
             checkpoint_dir = "./checkpoints_celeba"
+            sample_dir = "./samples_celeba"
             input_dim = (256, 256)
             input_channels = 3
             latent_dim = (8, 8)
@@ -101,7 +102,7 @@ def main(args):
             )
         sample_callback = SampleCallback(
             input_dim=(input_channels, *input_dim), latent_dim=(latent_channels, *latent_dim),
-            frequency=run.config['sample_frequency'], num_samples=8)
+            frequency=run.config['sample_frequency'], num_samples=8, output_dir=sample_dir)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True)

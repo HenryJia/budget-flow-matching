@@ -15,6 +15,10 @@ Acknowledgements: I want to give a shoutout to Sully, an old friend and former r
 
 # Implementations
 
+# High-Resolution Image Synthesis with Latent Diffusion Models
+### Our code is in `ldm` [Link](https://github.com/HenryJia/diffusion-classroom/tree/main/ldm)
+### [ArXiv](https://arxiv.org/abs/2112.10752) and [Author's implementation](https://github.com/CompVis/latent-diffusion)
+
 # Flow Matching for Generative Modeling
 ### Our code is in `cfm` [Link](https://github.com/HenryJia/diffusion-classroom/tree/main/cfm)
 #### [ArXiv](https://arxiv.org/abs/2210.02747)
