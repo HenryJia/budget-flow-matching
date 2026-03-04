@@ -47,12 +47,11 @@ def main(args):
             every_n_epochs=10,
             save_last=True
             )
-        sample_callback = SampleCallback(num_samples=16)
+        sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), num_samples=16)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         pb_callback = RichProgressBar(leave=True)
 
         trainer = L.Trainer(
-            precision='bf16-mixed',
             max_epochs=run.config['epochs'],
             logger=logger,
             accelerator='gpu',
