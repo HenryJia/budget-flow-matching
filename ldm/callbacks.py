@@ -5,8 +5,9 @@ import torch
 from lightning.pytorch.callbacks import Callback
 
 class SampleCallback(Callback):
-    def __init__(self, input_dim, frequency=50, num_samples=16, output_dir="./samples"):
+    def __init__(self, input_dim, latent_dim, frequency=50, num_samples=16, output_dir="./samples"):
         self.input_dim = input_dim
+        self.latent_dim = latent_dim
         self.num_samples = num_samples
         self.frequency = frequency
         self.output_dir = output_dir
@@ -15,7 +16,7 @@ class SampleCallback(Callback):
         if (trainer.current_epoch + 1) % self.frequency == 0:
             # Sample from the model at the end of each epoch and log the samples to wandb
             pl_module.eval()
-            samples = pl_module(torch.randn(self.num_samples**2, *self.input_dim).to(device=pl_module.device))
+            samples = pl_module(torch.randn(self.num_samples**2, *self.latent_dim).to(device=pl_module.device))
             samples = (samples + 1.0) / 2.0 # Rescale from [-1, 1] to [0, 1]
             samples = (samples * 255).clamp(0, 255).byte()
 
