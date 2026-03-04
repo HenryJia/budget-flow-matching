@@ -1,5 +1,5 @@
 # Deep Unsupervised Learning using Nonequilibrium Thermodynamics
-### [ArXiv](https://arxiv.org/abs/1503.03585) [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
+### [ArXiv](https://arxiv.org/abs/1503.03585) and [Author's implementation](https://github.com/Sohl-Dickstein/Diffusion-Probabilistic-Models/tree/master)
 
 ## Sample on MNIST
 
@@ -20,5 +20,3 @@ I think this also explains why training takes so long. The old reference impleme
 This being said, there is one interesting aspect of the loss function for this paper. It's clear that the KL term is the main driver which minimises the denoising error. But, the entropy terms are interesting. If we initialise the diffusion rate betas to be smaller initially, the term H_q(X_T | X_0), the entropy of the noise distribution at the end, will be smaller than a standard Gaussian. This means that the model will slowly increase the diffusion rate betas to eventually match the entropy of a standard Gaussian. This is interesting because it means that the model is effectively learning to increase the noise level over time, which is kind of like a curriculum learning strategy. The model starts off with an easier task of denoising less noisy images, and then gradually increases the difficulty as it learns.
 
 All in all, implementing this thing is a neat exercise, but it kind of sucks. It's overcomplicated and kind of fragile to train. It's not practical, but it is useful for understanding the variational lowerbound.
-
-Here's a sample of the generated MNIST digits after 1000 epochs:
