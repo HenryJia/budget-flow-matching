@@ -14,12 +14,13 @@ from lightning.pytorch.strategies import DDPStrategy
 from lightning.pytorch.loggers import WandbLogger
 from lightning.fabric.utilities.throughput import measure_flops
 
-from sentence_transformers import SentenceTransformer
 from diffusers import AutoencoderDC
+from transformers import AutoTokenizer, AutoModel
+from sentence_transformers import SentenceTransformer
 from dataset import PublicDomainDataset
 
 
-from model import LatentDiffusionModel
+from model import LatentDiffusionModel, PromptEncoderWrapper
 from callbacks import SampleCallback
 
 import wandb
@@ -65,7 +66,20 @@ def main(args):
             latent_dim = (8, 8)
             latent_channels = 32
 
-            prompt_encoder = SentenceTransformer('google/embeddinggemma-300m', device='cpu', model_kwargs={"torch_dtype": torch.bfloat16})
+            # Note: Normally, we should use this setup below so that the full embedding along with the tokeniser mask is passed to the diffusion model
+            #prompt_encoder = PromptEncoderWrapper(
+                #encoder=AutoModel.from_pretrained("google/embeddinggemma-300m", torch_dtype=torch.bfloat16)
+                #tokeniser=AutoTokenizer.from_pretrained("google/embeddinggemma-300m", torch_dtype=torch.bfloat16),
+            #)
+
+            # However, the above setup is much much more computationally intensive (by about 2-3x)
+            # EmbeddingGemma300M specifically for our purposes is trained for embedding whole sentences into 1 vector
+            # So we should be able to get away with using just the single embedding vector without too much loss of fidelity (hopefully)
+            prompt_encoder = PromptEncoderWrapper(
+                encoder=SentenceTransformer('google/embeddinggemma-300m', device='cpu', model_kwargs={"torch_dtype": torch.bfloat16}),
+                tokeniser=None
+            )
+            
             prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
 
             prompt_embedding_dim = 768 + 2 # Gemma's embedding dimension, plus 2 so our model knows the height and width of the image
@@ -145,6 +159,9 @@ def main(args):
             callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
+
+        model = model.cuda()
+        sample_callback.on_train_epoch_end(trainer, model) # test
 
         trainer.fit(model, dataloader)
 

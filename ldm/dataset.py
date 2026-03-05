@@ -24,6 +24,7 @@ class PublicDomainDataset(Dataset):
         self.request_header = {
             'User-Agent': 'Henry\'s Diffusion and Flow Project'
             }
+        self.backoff_time = 2.0
 
     def __len__(self):
         return len(self.dataset_hf)
@@ -40,15 +41,25 @@ class PublicDomainDataset(Dataset):
                 os.remove(os.path.join(self.img_dir, f"{idx}.png"))
                 return self.__getitem__(idx) # Try again, this time it will download the image instead of loading from cache
         else:
-            time.sleep(2.0) # Be nice to the server and don't send requests too quickly
-            response = requests.get(url, headers=self.request_header)
+            try:
+                response = requests.get(url, headers=self.request_header)
 
-            if response.status_code != 200:
-                raise ValueError(f"Failed to download image {idx} from {url}, response code: {response.status_code}")
+                if response.status_code == 200:
+                    self.backoff_time = 2.0 # Reset backoff time after a successful request
+                elif response.status_code == 429: # Too Many Requests
+                    print(f"Received 429 Too Many Requests for image {idx}, backing off for {self.backoff_time} seconds")
+                    time.sleep(self.backoff_time)
+                    self.backoff_time *= 2 # Exponential backoff
+                    return self.__getitem__(idx) # Try again after backing off
+                else: # Any other error
+                    raise ValueError(f"Failed to download image {idx} from {url}, response code: {response.status_code}")
 
-            image = Image.open(BytesIO(response.content))
+                image = Image.open(BytesIO(response.content))
 
-            image.save(os.path.join(self.img_dir, f"{idx}.png")) # Cache the image so we don't have to download it again in the future
+                image.save(os.path.join(self.img_dir, f"{idx}.png")) # Cache the image so we don't have to download it again in the future
+            except Exception as e:
+                print(f"Failed to download image {idx} from {url}, error: {e}. Skipping and loading the next one instead")
+                return self.__getitem__((idx + 1) % len(self.dataset_hf)) # Just skip this image and try the next one
         
         image = image.convert("RGB")
         h, w = image.size

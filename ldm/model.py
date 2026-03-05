@@ -6,9 +6,36 @@ import torchvision as tv
 import torch.nn.functional as F
 import lightning as L
 
+from sentence_transformers import SentenceTransformer
+
 from diffusers import SanaTransformer2DModel
 
 
+class PromptEncoderWrapper(nn.Module):
+    def __init__(self, encoder, tokeniser=None):
+        super().__init__()
+        self.tokeniser = tokeniser
+        if self.tokeniser is not None:
+            self.tokeniser.padding_side = "right"
+            self.tokeniser.pad_token = self.tokeniser.eos_token
+
+        self.encoder = encoder
+
+    def forward(self, prompts):
+        if self.tokeniser is not None:
+            tokens = self.tokeniser(prompts, padding='max_length', truncation=True, return_tensors="pt", return_attention_mask=True)
+
+            for k in tokens:
+                if hasattr(tokens[k], "to"):
+                    tokens[k] = tokens[k].to(device=self.encoder.device)
+
+            encoding = self.encoder(**tokens)
+            return encoding.last_hidden_state, tokens.attention_mask
+        else:
+            assert isinstance(self.encoder, SentenceTransformer), "If no tokeniser is provided, the encoder must be a SentenceTransformer"
+            encoding = self.encoder.encode(prompts, convert_to_tensor=True)
+
+            return encoding, None
 
 class LatentDiffusionModel(L.LightningModule):
     def __init__(
@@ -32,7 +59,7 @@ class LatentDiffusionModel(L.LightningModule):
         )
 
         # Reduce depth
-        config["num_layers"] = 12
+        config["num_layers"] = 10
 
         # Reduce width
         config["num_attention_heads"] = 12
@@ -109,20 +136,23 @@ class LatentDiffusionModel(L.LightningModule):
 
         # Whilst the derivation to get here takes a bit more work, all we need is to predict the epsilons when running in reverse
         # This is based on Algorithm 1 in the ddpm paper
-        if self.prompt_encoder:
-            prompt = batch[1]
-            prompt_mask = None # Assume we're using sentence_transformers, which doesn't output a mask
-            prompt_embeddings = self.prompt_encoder.encode(prompt, convert_to_tensor=True).to(dtype=self.dtype)
+        with torch.no_grad():
+            if self.prompt_encoder is not None:
+                prompt = batch[1]
+                prompt_embeddings, prompt_mask = self.prompt_encoder(prompt)
+                prompt_embeddings = prompt_embeddings.to(dtype=self.dtype)
+                if len(prompt_embeddings.shape) == 2:
+                    prompt_embeddings = prompt_embeddings[:, None, :]
+                if prompt_mask is not None:
+                    prompt_mask = prompt_mask.to(dtype=self.dtype)
+            else:
+                prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
+                prompt_mask = None
 
-        else:
-            prompt_embeddings = torch.zeros((x.shape[0], self.prompt_dim), device=x.device)
-            prompt_mask = None
+            if len(batch) == 3:
+                size = batch[2][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
+                prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
 
-        if len(batch) == 3:
-            size = batch[2]
-            prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1)
-
-        prompt_embeddings = prompt_embeddings[:, None, :]
 
         epsilon_reverse  = self.reverse_diffusion(x_t, t, prompt_embeddings, prompt_mask)
 
@@ -142,15 +172,19 @@ class LatentDiffusionModel(L.LightningModule):
             x_t = torch.randn_like(x, dtype=self.dtype)
 
             if prompts is not None:
-                prompt_embeddings = self.prompt_encoder.encode(prompts, convert_to_tensor=True).to(dtype=self.dtype)
-                prompt_mask = None # Assume we're using sentence_transformers, which doesn't output a mask
+                prompt_embeddings, prompt_mask = self.prompt_encoder(prompts)
+                prompt_embeddings = prompt_embeddings.to(dtype=self.dtype)
+                if len(prompt_embeddings.shape) == 2:
+                    prompt_embeddings = prompt_embeddings[:, None, :]
+                if prompt_mask is not None:
+                    prompt_mask = prompt_mask.to(dtype=self.dtype)
             else:
                 prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
                 prompt_mask = None
 
             if size is not None:
+                size = size[:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
                 prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1)
-            prompt_embeddings = prompt_embeddings[:, None, :]
 
             # Step 2: Run the reverse diffusion process for the whole trajectory
             for t in range(self.trajectory_length - 1, -1, -1):
