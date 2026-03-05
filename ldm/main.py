@@ -160,9 +160,6 @@ def main(args):
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 
-        model = model.cuda()
-        sample_callback.on_train_epoch_end(trainer, model) # test
-
         trainer.fit(model, dataloader)
 
 if __name__ == "__main__":
