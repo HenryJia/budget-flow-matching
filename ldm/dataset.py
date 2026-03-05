@@ -49,7 +49,7 @@ class PublicDomainDataset(Dataset):
                 elif response.status_code == 429: # Too Many Requests
                     print(f"Received 429 Too Many Requests for image {idx}, backing off for {self.backoff_time} seconds")
                     time.sleep(self.backoff_time)
-                    self.backoff_time *= 2 # Exponential backoff
+                    self.backoff_time = min(self.backoff_time * 2, 32) # Exponential backoff
                     return self.__getitem__(idx) # Try again after backing off
                 else: # Any other error
                     raise ValueError(f"Failed to download image {idx} from {url}, response code: {response.status_code}")
