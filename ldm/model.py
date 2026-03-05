@@ -13,7 +13,7 @@ from diffusers import SanaTransformer2DModel
 class LatentDiffusionModel(L.LightningModule):
     def __init__(
             self, latent_dim, latent_channels, autoencoder,
-            trajectory_length, lr, prompt_encoder=None, prompt_dim=960
+            trajectory_length, lr, prompt_encoder=None, prompt_dim=768
             ):
         super(LatentDiffusionModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
@@ -110,10 +110,19 @@ class LatentDiffusionModel(L.LightningModule):
         # Whilst the derivation to get here takes a bit more work, all we need is to predict the epsilons when running in reverse
         # This is based on Algorithm 1 in the ddpm paper
         if self.prompt_encoder:
-            prompt_embeddings, prompt_mask = self.prompt_encoder(x)
+            prompt = batch[1]
+            prompt_mask = None # Assume we're using sentence_transformers, which doesn't output a mask
+            prompt_embeddings = self.prompt_encoder.encode(prompt, convert_to_tensor=True).to(dtype=self.dtype)
+
         else:
-            prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
+            prompt_embeddings = torch.zeros((x.shape[0], self.prompt_dim), device=x.device)
             prompt_mask = None
+
+        if len(batch) == 3:
+            size = batch[2]
+            prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1)
+
+        prompt_embeddings = prompt_embeddings[:, None, :]
 
         epsilon_reverse  = self.reverse_diffusion(x_t, t, prompt_embeddings, prompt_mask)
 
@@ -124,7 +133,7 @@ class LatentDiffusionModel(L.LightningModule):
         self.log("train_loss", loss, prog_bar=True)
         return loss
 
-    def forward(self, x, prompt=None):
+    def forward(self, x, prompts=None, size=None):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
@@ -132,11 +141,16 @@ class LatentDiffusionModel(L.LightningModule):
             # Step 1: Draw a sample from the prior distribution
             x_t = torch.randn_like(x, dtype=self.dtype)
 
-            if self.prompt_encoder:
-                prompt_embeddings, prompt_mask = self.prompt_encoder(prompt)
+            if prompts is not None:
+                prompt_embeddings = self.prompt_encoder.encode(prompts, convert_to_tensor=True).to(dtype=self.dtype)
+                prompt_mask = None # Assume we're using sentence_transformers, which doesn't output a mask
             else:
                 prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
                 prompt_mask = None
+
+            if size is not None:
+                prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1)
+            prompt_embeddings = prompt_embeddings[:, None, :]
 
             # Step 2: Run the reverse diffusion process for the whole trajectory
             for t in range(self.trajectory_length - 1, -1, -1):

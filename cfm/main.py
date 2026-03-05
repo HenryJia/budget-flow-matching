@@ -26,22 +26,13 @@ class EMAWeightAveraging(WeightAveraging):
 
 def main(args):
     with wandb.init(config=args.config, project="ot-cfm") as run:
-        if run.config['dataset'] == "MNIST":
-            transforms = tv.transforms.Compose([
-                tv.transforms.ToTensor(),
-                tv.transforms.Normalize((0.5,), (0.5,)) # Rescale from [0, 1] to [-1, 1]
-            ])
-            dataset = tv.datasets.MNIST(root="./data", download=True, transform=transforms)
-            input_dim = (28, 28)
-            input_channels = 1
-            checkpoint_dir = "./checkpoints_mnist"
-        elif run.config['dataset'] == "CelebA":
+        if run.config['dataset'] == "CelebA":
             transforms = tv.transforms.Compose([
                 #tv.transforms.Resize((256, 256)),
                 tv.transforms.ToTensor(),
                 tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # Rescale from [0, 1] to [-1, 1]
             ])
-            dataset = tv.datasets.ImageFolder(root='./data/celebahq256_imgs/train', transform=transforms)
+            dataset = tv.datasets.ImageFolder(root='../celebahq256_imgs/train', transform=transforms)
             input_dim = (256, 256)
             input_channels = 3
             checkpoint_dir = "./checkpoints_celeba"

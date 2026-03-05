@@ -33,7 +33,7 @@ def main(args):
                 tv.transforms.ToTensor(),
                 tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # Rescale from [0, 1] to [-1, 1]
             ])
-            dataset = tv.datasets.ImageFolder(root='./data/celebahq256_imgs/train', transform=transforms)
+            dataset = tv.datasets.ImageFolder(root='../celebahq256_imgs/train', transform=transforms)
             input_dim = (256, 256)
             input_channels = 3
             checkpoint_dir = "./checkpoints_celeba"
