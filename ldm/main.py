@@ -87,7 +87,7 @@ def main(args):
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
-        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=8, pin_memory=True)
+        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=16, pin_memory=True)
 
         # We are not training the autoencoder. This is far beyond our hardware capabilities
         # We'll use the Deep Compression Autoencoder from Huggingface Diffusers. We'll use the sana variant.

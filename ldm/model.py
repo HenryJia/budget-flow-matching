@@ -59,7 +59,7 @@ class LatentDiffusionModel(L.LightningModule):
         )
 
         # Reduce depth
-        config["num_layers"] = 10
+        config["num_layers"] = 12
 
         # Reduce width
         config["num_attention_heads"] = 12
