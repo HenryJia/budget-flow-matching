@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 torch.set_float32_matmul_precision('medium')
 torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = False
 import torch.utils.data as data
 import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
@@ -87,7 +88,14 @@ def main(args):
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
-        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=16, pin_memory=True)
+        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=4, pin_memory=True)
+
+        #from rich.progress import Progress
+        #print("Precaching dataset...")
+        #with Progress() as progress:
+            #task = progress.add_task("Precaching...", total=len(dataloader))
+            #for batch in dataloader:
+                #progress.update(task, advance=1)
 
         # We are not training the autoencoder. This is far beyond our hardware capabilities
         # We'll use the Deep Compression Autoencoder from Huggingface Diffusers. We'll use the sana variant.
