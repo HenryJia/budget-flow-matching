@@ -25,7 +25,7 @@ trajectory_length:
 lr: # The paper suggests that this is a good learning rate to use for smaller images. For larger images they used 2e-5
   description: The learning rate for training the model
   type: float
-  value: 0.0001
+  value: 0.00002
 ema_decay:
   description: The decay rate for the EMA weight averaging
   type: float

@@ -23,7 +23,7 @@ class PromptEncoderWrapper(nn.Module):
 
     def forward(self, prompts):
         if self.tokeniser is not None:
-            tokens = self.tokeniser(prompts, padding='max_length', truncation=True, return_tensors="pt", return_attention_mask=True)
+            tokens = self.tokeniser(prompts, padding='max_length', max_length=128, truncation=True, return_tensors="pt", return_attention_mask=True)
 
             for k in tokens:
                 if hasattr(tokens[k], "to"):
@@ -36,6 +36,7 @@ class PromptEncoderWrapper(nn.Module):
             encoding = self.encoder.encode(prompts, convert_to_tensor=True)
 
             return encoding, None
+
 
 class LatentDiffusionModel(L.LightningModule):
     def __init__(
@@ -162,6 +163,12 @@ class LatentDiffusionModel(L.LightningModule):
 
         self.log("train_loss", loss, prog_bar=True)
         return loss
+
+    # Override the train function to ensure the text encoder and autoencoder stay in eval mode
+    def train(self):
+        super().train()
+        self.prompt_encoder.eval()
+        self.autoencoder.eval()
 
     def forward(self, x, prompts=None, size=None):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory

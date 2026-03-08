@@ -67,23 +67,29 @@ def main(args):
             latent_dim = (8, 8)
             latent_channels = 32
 
-            # Note: Normally, we should use this setup below so that the full embedding along with the tokeniser mask is passed to the diffusion model
             #prompt_encoder = PromptEncoderWrapper(
-                #encoder=AutoModel.from_pretrained("google/embeddinggemma-300m", torch_dtype=torch.bfloat16)
-                #tokeniser=AutoTokenizer.from_pretrained("google/embeddinggemma-300m", torch_dtype=torch.bfloat16),
+                #encoder=AutoModel.from_pretrained("HuggingFaceTB/SmolLM2-135M", dtype=torch.bfloat16),
+                #tokeniser=AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M", dtype=torch.bfloat16),
             #)
+            #prompt_embedding_dim = 576 + 2 # SmolLM2's embedding dimension, plus 2 so our model knows the height and width of the image
 
-            # However, the above setup is much much more computationally intensive (by about 2-3x)
+            prompt_encoder = PromptEncoderWrapper(
+                encoder=AutoModel.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+                tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+            )
+            prompt_embedding_dim = 640 + 2 # Gemma3's embedding dimension, plus 2 so our model knows the height and width of the image
+
             # EmbeddingGemma300M specifically for our purposes is trained for embedding whole sentences into 1 vector
             # So we should be able to get away with using just the single embedding vector without too much loss of fidelity (hopefully)
-            prompt_encoder = PromptEncoderWrapper(
-                encoder=SentenceTransformer('google/embeddinggemma-300m', device='cpu', model_kwargs={"torch_dtype": torch.bfloat16}),
-                tokeniser=None
-            )
+            #prompt_encoder = PromptEncoderWrapper(
+                #encoder=SentenceTransformer('google/embeddinggemma-300m', device='cpu', model_kwargs={"torch_dtype": torch.bfloat16}),
+                #tokeniser=None
+            #)
+            #prompt_embedding_dim = 768 + 2 # Gemma's embedding dimension, plus 2 so our model knows the height and width of the image
             
+            prompt_encoder = prompt_encoder.eval()
             prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
 
-            prompt_embedding_dim = 768 + 2 # Gemma's embedding dimension, plus 2 so our model knows the height and width of the image
             sample_prompts = pd.read_csv("./sample-prompts.csv")["Description"].tolist()
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
@@ -104,6 +110,7 @@ def main(args):
             subfolder="vae",
             torch_dtype=torch.bfloat16
         )
+        dcae = dcae.eval()
         dcae = torch.compile(dcae, "max-autotune")
 
         model = LatentDiffusionModel(
@@ -117,27 +124,29 @@ def main(args):
         )
 
         print("Measuring FLOPs...")
+        model = model.cuda()
         flops = measure_flops(
             model,
             lambda: model.reverse_diffusion(
-                torch.randn(1, latent_channels, *latent_dim), t=torch.tensor([0]),
-                prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim)),
+                torch.randn(1, latent_channels, *latent_dim).cuda(), t=torch.tensor([0]).cuda(),
+                prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim)).cuda(),
                 prompt_mask=None)
         )
 
         print(f"Forward Diffusion FLOPs: {flops / 1e9:.2f} GFLOPs")
         if run.config['dataset'] == "CelebA":
-            test_input = (torch.randn(1, input_channels, *input_dim),)
+            test_input = (torch.randn(1, input_channels, *input_dim).cuda(),)
         elif run.config['dataset'] == "PublicDomain":
-            test_input = (torch.randn(1, input_channels, *input_dim), ["test"], torch.ones((1, 2)))
+            test_input = (torch.randn(1, input_channels, *input_dim).cuda(), ["test"], torch.ones((1, 2)).cuda())
         flops = measure_flops(
             model,
             lambda: model.reverse_diffusion(
-                torch.randn(1, latent_channels, *latent_dim), t=torch.tensor([0]),
-                prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim), device=next(model.parameters()).device),
+                torch.randn(1, latent_channels, *latent_dim).cuda(), t=torch.tensor([0]).cuda(),
+                prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim), device=model.device).cuda(),
                 prompt_mask=None),
             lambda _: model.training_step(test_input, 0)
         )
+        model = model.cpu()
         print(f"Training Step FLOPs: {flops / 1e9:.2f} GFLOPs")
 
         print("\n\nStarting training...")

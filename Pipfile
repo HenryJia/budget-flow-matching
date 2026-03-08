@@ -3,12 +3,18 @@ name = "pypi"
 url = "https://pypi.org/simple"
 verify_ssl = true
 
+[[source]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+verify_ssl = true
+
 [packages]
+psutil = "*"
 numpy = "*"
 scipy = "*"
 pandas = "*"
-torch = "*"
-torchvision = "*"
+torch = {version = "==2.10.0+cu130", index = "pytorch-cu130"}
+torchvision = {version = "*", index = "pytorch-cu130"}
 lightning = "*"
 wandb = "*"
 gdown = "*"
@@ -17,6 +23,8 @@ diffusers = "*"
 datasets = "*"
 transformers = "*"
 sentence-transformers = "*"
+ninja = "*"
+flash-attn = {file = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3%2Bcu130torch2.10-cp314-cp314-linux_x86_64.whl"}
 torchdiffeq = "*"
 
 [requires]

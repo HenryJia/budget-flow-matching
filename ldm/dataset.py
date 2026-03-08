@@ -71,4 +71,9 @@ class PublicDomainDataset(Dataset):
         size = torch.tensor([h, w]) / 256.0 # just to keep numbers small
         if self.transform:
             image = self.transform(image)
+
+        if image is None or item["description"] is None:
+            print(f"Failed to load image {idx} from {url}. Got None instead. Skipping and loading the next one instead")
+            return self.__getitem__((idx + 1) % len(self.dataset_hf)) # Just skip this image and try the next one instead
+
         return image, item["description"], size
