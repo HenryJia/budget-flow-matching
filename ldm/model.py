@@ -165,8 +165,8 @@ class LatentDiffusionModel(L.LightningModule):
         return loss
 
     # Override the train function to ensure the text encoder and autoencoder stay in eval mode
-    def train(self):
-        super().train()
+    def train(self, mode=True):
+        super().train(mode)
         self.prompt_encoder.eval()
         self.autoencoder.eval()
 
