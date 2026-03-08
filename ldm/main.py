@@ -67,26 +67,14 @@ def main(args):
             latent_dim = (8, 8)
             latent_channels = 32
 
-            #prompt_encoder = PromptEncoderWrapper(
-                #encoder=AutoModel.from_pretrained("HuggingFaceTB/SmolLM2-135M", dtype=torch.bfloat16),
-                #tokeniser=AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M", dtype=torch.bfloat16),
-            #)
-            #prompt_embedding_dim = 576 + 2 # SmolLM2's embedding dimension, plus 2 so our model knows the height and width of the image
-
             prompt_encoder = PromptEncoderWrapper(
-                encoder=AutoModel.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
-                tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+                encoder=AutoModel.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+                tokeniser=AutoTokenizer.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
             )
-            prompt_embedding_dim = 640 + 2 # Gemma3's embedding dimension, plus 2 so our model knows the height and width of the image
 
-            # EmbeddingGemma300M specifically for our purposes is trained for embedding whole sentences into 1 vector
-            # So we should be able to get away with using just the single embedding vector without too much loss of fidelity (hopefully)
-            #prompt_encoder = PromptEncoderWrapper(
-                #encoder=SentenceTransformer('google/embeddinggemma-300m', device='cpu', model_kwargs={"torch_dtype": torch.bfloat16}),
-                #tokeniser=None
-            #)
-            #prompt_embedding_dim = 768 + 2 # Gemma's embedding dimension, plus 2 so our model knows the height and width of the image
-            
+            # plus 2 so our model knows the height and width of the image
+            prompt_embedding_dim = prompt_encoder.encoder.config.hidden_size + 2 
+
             prompt_encoder = prompt_encoder.eval()
             prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
 
@@ -157,7 +145,7 @@ def main(args):
             dirpath=checkpoint_dir,
             monitor="train_loss",
             mode="min",
-            every_n_epochs=10,
+            every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
             save_last=True
             )
         sample_callback = SampleCallback(
