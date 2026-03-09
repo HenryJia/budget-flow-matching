@@ -55,17 +55,17 @@ def main(args):
             sample_prompts = None
 
         elif run.config['dataset'] == "PublicDomain":
+            input_dim = (512, 512)
+            input_channels = 3
+            latent_dim = (8, 8)
+            latent_channels = 32
             dataset = PublicDomainDataset(split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
-                tv.transforms.Resize((256, 256)),
+                tv.transforms.Resize(input_dim),
                 tv.transforms.ToTensor(),
                 tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # Rescale from [0, 1] to [-1, 1]
             ]))
             checkpoint_dir = "./checkpoints_publicdomain"
             sample_dir = "./samples_publicdomain"
-            input_dim = (256, 256)
-            input_channels = 3
-            latent_dim = (8, 8)
-            latent_channels = 32
 
             prompt_encoder = PromptEncoderWrapper(
                 encoder=AutoModel.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
