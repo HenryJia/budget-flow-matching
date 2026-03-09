@@ -55,9 +55,9 @@ def main(args):
             sample_prompts = None
 
         elif run.config['dataset'] == "PublicDomain":
-            input_dim = (384, 256) # 3:2 aspect ration, common for landscape photos
+            input_dim = (256, 256)
             input_channels = 3
-            latent_dim = (16, 16)
+            latent_dim = (8, 8)
             latent_channels = 32
             dataset = PublicDomainDataset(split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
                 tv.transforms.Resize(input_dim),

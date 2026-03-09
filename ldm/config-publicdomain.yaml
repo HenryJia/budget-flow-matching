@@ -6,12 +6,12 @@ dataset:
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 32
+  value: 64
 
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 20
+  value: 50
 
 gpus:
   description: The number of GPUs to use for training
