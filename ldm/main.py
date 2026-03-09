@@ -55,7 +55,7 @@ def main(args):
             sample_prompts = None
 
         elif run.config['dataset'] == "PublicDomain":
-            input_dim = (512, 512)
+            input_dim = (384, 256) # 3:2 aspect ration, common for landscape photos
             input_channels = 3
             latent_dim = (16, 16)
             latent_channels = 32
