@@ -1,0 +1,41 @@
+dataset:
+  description: The dataset to use for training
+  type: str
+  value: "PublicDomain"
+
+batchsize:
+  description: The batch size to use for the dataloader
+  type: int
+  value: 64
+
+epochs:
+  description: The number of epochs to train the model for
+  type: int
+  value: 50
+
+gpus:
+  description: The number of GPUs to use for training
+  type: int
+  value: 2
+
+prompt_encoder:
+  description: The name of the HuggingFace model to use as the prompt encoder
+  type: str
+  value: "google/gemma-3-270m" # Good choices are gemma-3-270m, or smolLM2-135M
+trajectory_length:
+  description: The length of the diffusion trajectory
+  type: int
+  value: 1000
+lr:
+  description: The learning rate for training the model
+  type: float
+  value: 0.0001
+ema_decay:
+  description: The decay rate for the EMA weight averaging
+  type: float
+  value: 0.9999 # The ddpm paper uses 0.9999
+
+sample_frequency:
+  description: The frequency (in epochs) at which to sample from the model and log the samples to wandb
+  type: int
+  value: 1

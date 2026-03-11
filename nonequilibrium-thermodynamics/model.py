@@ -196,5 +196,3 @@ class DiffusionModel(L.LightningModule):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
         return optimizer
-        #scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
-        #return {"optimizer": optimizer, "lr_scheduler": scheduler}
