@@ -43,7 +43,7 @@ class DiffusionModel(L.LightningModule):
                 "UpBlock2D",
                 "UpBlock2D",
             ),
-            norm_num_groups=16,
+            norm_num_groups=8,
         )
 
         # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
