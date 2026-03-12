@@ -9,6 +9,136 @@ import lightning as L
 from sentence_transformers import SentenceTransformer
 
 from diffusers import SanaTransformer2DModel
+from diffusers.utils import apply_lora_scale
+from transformers import DINOv2Model
+
+from torchdiffeq import odeint
+
+class REPATransformer2DModel(SanaTransformer2DModel):
+    def __init__(self, repa_dim, repa_layer, num_attention_heads, attention_head_dim, *args, **kwargs):
+        super().__init__(*args, **kwargs, num_attention_heads=num_attention_heads, attention_head_dim=attention_head_dim)
+        self.repa_dim = repa_dim
+        self.repa_layer = repa_layer
+
+        inner_dim = num_attention_heads * attention_head_dim
+
+        self.repa_attn = nn.MultiheadAttention(embed_dim=inner_dim, num_heads=8, batch_first=True)
+        self.repa_projection = nn.Sequential(
+            nn.Linear(inner_dim, self.repa_dim * 4),
+            nn.SiLU(),
+            nn.Linear(self.repa_dim * 4, self.repa_dim)
+        )
+
+    # This is just copied from the original forward, but we need to output the REPA hidden states
+    @apply_lora_scale("attention_kwargs")
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor,
+        timestep: torch.Tensor,
+        guidance: torch.Tensor | None = None,
+        encoder_attention_mask: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        attention_kwargs: dict[str, Any] | None = None,
+        controlnet_block_samples: tuple[torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, ...]:
+        # ensure attention_mask is a bias, and give it a singleton query_tokens dimension.
+        #   we may have done this conversion already, e.g. if we came here via UNet2DConditionModel#forward.
+        #   we can tell by counting dims; if ndim == 2: it's a mask rather than a bias.
+        # expects mask of shape:
+        #   [batch, key_tokens]
+        # adds singleton query_tokens dimension:
+        #   [batch,                    1, key_tokens]
+        # this helps to broadcast it as a bias over attention scores, which will be in one of the following shapes:
+        #   [batch,  heads, query_tokens, key_tokens] (e.g. torch sdp attn)
+        #   [batch * heads, query_tokens, key_tokens] (e.g. xformers or classic attn)
+        if attention_mask is not None and attention_mask.ndim == 2:
+            # assume that mask is expressed as:
+            #   (1 = keep,      0 = discard)
+            # convert mask into a bias that can be added to attention scores:
+            #       (keep = +0,     discard = -10000.0)
+            attention_mask = (1 - attention_mask.to(hidden_states.dtype)) * -10000.0
+            attention_mask = attention_mask.unsqueeze(1)
+
+        # convert encoder_attention_mask to a bias the same way we do for attention_mask
+        if encoder_attention_mask is not None and encoder_attention_mask.ndim == 2:
+            encoder_attention_mask = (1 - encoder_attention_mask.to(hidden_states.dtype)) * -10000.0
+            encoder_attention_mask = encoder_attention_mask.unsqueeze(1)
+
+        # 1. Input
+        batch_size, num_channels, height, width = hidden_states.shape
+        p = self.config.patch_size
+        post_patch_height, post_patch_width = height // p, width // p
+
+        hidden_states = self.patch_embed(hidden_states)
+
+        if guidance is not None:
+            timestep, embedded_timestep = self.time_embed(
+                timestep, guidance=guidance, hidden_dtype=hidden_states.dtype
+            )
+        else:
+            timestep, embedded_timestep = self.time_embed(
+                timestep, batch_size=batch_size, hidden_dtype=hidden_states.dtype
+            )
+
+        encoder_hidden_states = self.caption_projection(encoder_hidden_states)
+        encoder_hidden_states = encoder_hidden_states.view(batch_size, -1, hidden_states.shape[-1])
+
+        encoder_hidden_states = self.caption_norm(encoder_hidden_states)
+
+        # 2. Transformer blocks
+        if torch.is_grad_enabled() and self.gradient_checkpointing:
+            for index_block, block in enumerate(self.transformer_blocks):
+                hidden_states = self._gradient_checkpointing_func(
+                    block,
+                    hidden_states,
+                    attention_mask,
+                    encoder_hidden_states,
+                    encoder_attention_mask,
+                    timestep,
+                    post_patch_height,
+                    post_patch_width,
+                )
+                if controlnet_block_samples is not None and 0 < index_block <= len(controlnet_block_samples):
+                    hidden_states = hidden_states + controlnet_block_samples[index_block - 1]
+
+                if index_block == self.repa_layer:
+                    repa_state = hidden_states
+
+        else:
+            for index_block, block in enumerate(self.transformer_blocks):
+                hidden_states = block(
+                    hidden_states,
+                    attention_mask,
+                    encoder_hidden_states,
+                    encoder_attention_mask,
+                    timestep,
+                    post_patch_height,
+                    post_patch_width,
+                )
+                if controlnet_block_samples is not None and 0 < index_block <= len(controlnet_block_samples):
+                    hidden_states = hidden_states + controlnet_block_samples[index_block - 1]
+
+                if index_block == self.repa_layer:
+                    repa_state = hidden_states
+
+        # 3. Normalization
+        hidden_states = self.norm_out(hidden_states, embedded_timestep, self.scale_shift_table)
+
+        hidden_states = self.proj_out(hidden_states)
+
+        # 5. Unpatchify
+        hidden_states = hidden_states.reshape(
+            batch_size, post_patch_height, post_patch_width, self.config.patch_size, self.config.patch_size, -1
+        )
+        hidden_states = hidden_states.permute(0, 5, 1, 3, 2, 4)
+        output = hidden_states.reshape(batch_size, -1, post_patch_height * p, post_patch_width * p)
+
+        # Do the REPA projection        
+        repa_state = torch.mean(self.repa_attn(repa_state, repa_state, repa_state), dim=1)
+        repa_state = self.repa_projection(repa_state)
+
+        return (output, repa_state)
 
 
 class PromptEncoderWrapper(nn.Module):
@@ -38,17 +168,18 @@ class PromptEncoderWrapper(nn.Module):
             return encoding, None
 
 
-class LatentDiffusionModel(L.LightningModule):
+class REPAModel(L.LightningModule):
     def __init__(
-            self, latent_dim, latent_channels, autoencoder,
-            trajectory_length, lr, prompt_encoder=None, prompt_dim=768
+            self, latent_dim, latent_channels, autoencoder, repa_model,
+            lr, prompt_encoder=None, prompt_dim=768,
+            repa_dim=256, repa_layer=7, repa_weight=0.5
             ):
-        super(LatentDiffusionModel, self).__init__()
+        super(REPAModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
         # The reference implementation does a fair bit of more complicated stuff which I think is a tad esoteric
 
         self.autoencoder = autoencoder
-        self.trajectory_length = trajectory_length
+        self.repa_model = repa_model
         self.lr = lr
         self.prompt_encoder = prompt_encoder
         self.prompt_dim = prompt_dim
@@ -60,7 +191,7 @@ class LatentDiffusionModel(L.LightningModule):
         )
 
         # Reduce depth
-        config["num_layers"] = 12
+        #config["num_layers"] = 12
 
         # Reduce width
         config["num_attention_heads"] = 12
@@ -71,72 +202,45 @@ class LatentDiffusionModel(L.LightningModule):
 
         config["caption_channels"] = prompt_dim
 
-        self.reverse_diffusion_net = SanaTransformer2DModel.from_config(config)
+        config["repa_dim"] = repa_dim
+        config["repa_layer"] = repa_layer
 
-        # Interestingly, unlike the nonequilibrium themodynamics paper, the betas are NOT learnable
-        # We will use the same fixed beta schedule as described in section 4 of the paper
-        self.beta = nn.parameter.Buffer(torch.linspace(start=1e-4, end=0.02, steps=trajectory_length))
-        self.alpha = nn.parameter.Buffer(1 - self.beta)
-        self.alpha_bar = nn.parameter.Buffer(torch.cumprod(self.alpha, dim=0))
+        self.flow_net = REPATransformer2DModel.from_config(config)
 
-    def forward_diffusion(self, x_0, t):
-        alpha_bar = self.alpha_bar[t]
 
-        x_0 = x_0.to(dtype=self.autoencoder.dtype)
-        latent = self.autoencoder.encode(x_0).latent
-        latent = latent.to(dtype=self.dtype)
-
-        epsilon_forward = torch.randn_like(latent)
-        latent = latent * torch.sqrt(alpha_bar)[:, None, None, None] + epsilon_forward * torch.sqrt(1 - alpha_bar)[:, None, None, None]
-
-        return latent, epsilon_forward
-
-    def reverse_diffusion(self, latent_t, t, prompt_embeddings, prompt_mask):
+    def flow(self, latent_t, t, prompt_embeddings, prompt_mask, return_repa=False):
         # Huggingface will take care of generating the time embedding fo us
-        out = self.reverse_diffusion_net(
+        out, repa_state = self.flow_net(
             hidden_states=latent_t,
             encoder_hidden_states=prompt_embeddings,
             encoder_attention_mask=prompt_mask,
-            timestep=t.to(dtype=latent_t.dtype)).sample
+            timestep=t.to(dtype=latent_t.dtype) * 1000)
 
-        return out
+        if return_repa:
+            return out, repa_state
+        else:
+            return out
 
-    def sample(self, x_t, t, prompt_embeddings, prompt_mask):
-        # Sample a single step of the reverse diffusion process as described in Algorithm 2 of the paper
-        epsilon_reverse = self.reverse_diffusion(x_t, t, prompt_embeddings, prompt_mask)
-
-        alpha_bar = self.alpha_bar[t]
-        alpha_t = self.alpha[t]
-        beta_t = self.beta[t]
-
-        # Described in section 3.2, we can either choose
-        #beta_tilde = (1 - alpha_bar / alpha_t) / (1 - alpha_bar) * beta_t # equation 7
-        #sigma2_t = beta_tilde
-        sigma2_t = beta_t
-
-        coef = torch.pow(alpha_t, -0.5)
-        coef_eps = beta_t / torch.sqrt(1 - alpha_bar)
-        out = coef[:, None, None, None] * (x_t - coef_eps[:, None, None, None] * epsilon_reverse)
-
-        # Note: The paper doesn't mention clamping the output at all
-        # But it is done in the reference implementation
-        # From my experiments, it seems to be crucial otherwise the colour hue can drift in very weird ways
-        z = (t > 0)[:, None, None, None] * torch.sqrt(sigma2_t)[:, None, None, None] * torch.randn_like(out)
-        out = out + z
-        return out
 
     def training_step(self, batch, batch_idx):
         x = batch[0]
 
-        t = torch.randint(low=0, high=self.trajectory_length, size=(x.shape[0],), device=x.device)
-
         # The autoencoder in the forward diffusion process is not trained
         # It is also ungodly expensive, so we really don't want PyTorch to be tracking gradients through it
         with torch.no_grad():
-            x_t, epsilon_forward = self.forward_diffusion(x, t)
+            x_1, epsilon_forward = self.forward_diffusion(x, t)
 
-        # Whilst the derivation to get here takes a bit more work, all we need is to predict the epsilons when running in reverse
-        # This is based on Algorithm 1 in the ddpm paper
+        # Unlike diffusion models, our timestep is continuous in [0, 1]
+        t = torch.rand(size=(x_1.shape[0],), device=x_1.device)
+
+        # Note: Unlike diffusion models, x_1 is the data and x_0 is our prior distribution (which is N(0, I))
+        x_0 = torch.randn_like(x_1)
+
+        t_expand = t[:, None, None, None]
+        x_t = (1 - t_expand) * x + t_expand * x_1
+
+        target_velocity = x_1 - x_0
+
         with torch.no_grad():
             if self.prompt_encoder is not None:
                 prompt = batch[1]
@@ -154,29 +258,38 @@ class LatentDiffusionModel(L.LightningModule):
                 size = batch[2][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
                 prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
 
+        velocity, repa_state = self.flow(x_t, t, prompt_embeddings, prompt_mask, return_repa=True)
 
-        epsilon_reverse  = self.reverse_diffusion(x_t, t, prompt_embeddings, prompt_mask)
+        velocity_loss = F.mse_loss(velocity, target_velocity.detach(), reduction='mean')
+        self.log("velocity_loss", velocity_loss, prog_bar=True)
 
-        # Based on equation 14 and its accompanying explanation, we can do this simple loss or the more complicated one in equation 12
-        # The paper suggests that the simple one works better, so we have no reason to do the more complicated one
-        loss = F.mse_loss(epsilon_reverse, epsilon_forward.detach(), reduction='mean')
+        if self.repa_weight > 0:
+            with torch.no_grad():
+                repa_target = self.repa_model(x).last_hidden_state
+                repa_target = torch.mean(repa_target, dim=1)
+    
+            repa_loss = self.repa_weight * F.mse_loss(repa_state, repa_target.detach(), reduction='mean')
+
+            self.log("repa_loss", repa_loss, prog_bar=True)
+
+            loss = velocity_loss + repa_loss
 
         self.log("train_loss", loss, prog_bar=True)
         return loss
 
-    # Override the train function to ensure the text encoder and autoencoder stay in eval mode
+    # Override the train function to ensure the other models we're using stay in eval mode
     def train(self, mode=True):
         super().train(mode)
         self.prompt_encoder.eval()
         self.autoencoder.eval()
+        self.repa_model.eval()
 
-    def forward(self, x, prompts=None, size=None):
+    def forward(self, x, prompts=None, size=None, stepss=10):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
         with torch.no_grad():
-            # Step 1: Draw a sample from the prior distribution
-            x_t = torch.randn_like(x, dtype=self.dtype)
+            x_0 = torch.randn_like(x)
 
             if prompts is not None:
                 prompt_embeddings, prompt_mask = self.prompt_encoder(prompts)
@@ -193,11 +306,17 @@ class LatentDiffusionModel(L.LightningModule):
                 size = size[:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
                 prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1)
 
-            # Step 2: Run the reverse diffusion process for the whole trajectory
-            for t in range(self.trajectory_length - 1, -1, -1):
-                x_t = self.sample(x_t, t * torch.ones(x_t.shape[0], device=x_t.device, dtype=torch.long), prompt_embeddings, prompt_mask)
-            out = self.autoencoder.decode(x_t.to(dtype=self.autoencoder.dtype)).sample
+            # Note: The actual REPA paper actually uses a more sophisticated SDE solver
+            # To do this, they had to make their own SDE solver, and convert the flow model from an ODE to SDE
+            # I honestly, do not entirely see the point of this. Maybe it gives better sample quality, but we want speed and simplicity
+            t = torch.linspace(0, 1, steps=steps + 1, device=x.device)
+
+            ode = lambda t, x: self.flow(x, t, prompt_embeddings, prompt_mask, return_repa=False)
+            trajectory = odeint(ode, x_0, t, atol=1e-5, rtol=1e-3, method='dopri5')
+
+            out = self.autoencoder.decode(trajectory[-1].to(dtype=self.autoencoder.dtype)).sample
         return out
+
 
     def configure_optimizers(self):
         # Just use Adam and call it a day

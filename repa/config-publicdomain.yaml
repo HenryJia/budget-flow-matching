@@ -22,10 +22,10 @@ prompt_encoder:
   description: The name of the HuggingFace model to use as the prompt encoder
   type: str
   value: "google/gemma-3-270m" # Good choices are gemma-3-270m, or smolLM2-135M
-trajectory_length:
-  description: The length of the diffusion trajectory
-  type: int
-  value: 1000
+repa_weight:
+  description: The weight to give to the REPA loss
+  type: float
+  value: 0.5
 lr:
   description: The learning rate for training the model
   type: float

@@ -143,9 +143,9 @@ def main(args):
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
-            monitor="train_loss",
-            mode="min",
+            monitor=None # Loss is not a meaningful quantity to monitor for generative models
             every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
+            save_on_train_epoch_end=True,
             save_last=True
             )
         sample_callback = SampleCallback(
@@ -154,6 +154,9 @@ def main(args):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True)
+
+        if args.continue_from:
+            model.load_from_checkpoint(args.continue_from)
 
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
@@ -170,6 +173,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to the config file")
+    parser.add_argument("--continue_from", type=str, default=None, help="Path to a checkpoint to continue training from")
 
     args = parser.parse_args()
 

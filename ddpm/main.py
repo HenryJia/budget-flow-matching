@@ -68,9 +68,9 @@ def main(args):
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
-            monitor="train_loss",
-            mode="min",
-            every_n_epochs=10,
+            monitor=None # Loss is not a meaningful quantity to monitor for generative models
+            every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
+            save_on_train_epoch_end=True,
             save_last=True
             )
         sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), frequency=run.config['sample_frequency'], num_samples=8)

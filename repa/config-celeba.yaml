@@ -11,17 +11,17 @@ batchsize:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 200
+  value: 50
 
 gpus:
   description: The number of GPUs to use for training
   type: int
   value: 2
 
-trajectory_length:
-  description: The length of the diffusion trajectory
-  type: int
-  value: 1000
+repa_weight:
+  description: The weight to give to the REPA loss
+  type: float
+  value: 0.5
 lr: # The paper suggests that this is a good learning rate to use for smaller images. For larger images they used 2e-5
   description: The learning rate for training the model
   type: float

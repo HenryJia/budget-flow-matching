@@ -21,7 +21,7 @@ from sentence_transformers import SentenceTransformer
 from dataset import PublicDomainDataset
 
 
-from model import LatentDiffusionModel, PromptEncoderWrapper
+from model import REPAModel, PromptEncoderWrapper
 from callbacks import SampleCallback
 
 import wandb
@@ -84,13 +84,6 @@ def main(args):
 
         dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=4, pin_memory=True)
 
-        #from rich.progress import Progress
-        #print("Precaching dataset...")
-        #with Progress() as progress:
-            #task = progress.add_task("Precaching...", total=len(dataloader))
-            #for batch in dataloader:
-                #progress.update(task, advance=1)
-
         # We are not training the autoencoder. This is far beyond our hardware capabilities
         # We'll use the Deep Compression Autoencoder from Huggingface Diffusers. We'll use the sana variant.
         dcae = AutoencoderDC.from_pretrained(
@@ -101,21 +94,35 @@ def main(args):
         dcae = dcae.eval()
         dcae = torch.compile(dcae, "max-autotune")
 
-        model = LatentDiffusionModel(
+        # For the Representation Alignment, use DINOv2-small. It's a small model, but it should be enough to help us train
+        # We do also need it to be light and fast, as we'll be running it at every step of the training loop
+        # We could use DINOv3, but Facebook makes us fill out a form to get request access, so fuck them
+        repa_model = AutoModel.from_pretrained(
+            "facebook/dinov2-small",
+            attn_implementation="flash_attention_2",
+            torch_dtype=torch.bfloat16
+        )
+        repa_model = repa_model.eval()
+        repa_model = torch.compile(repa_model, "max-autotune")
+
+        model = REPAModel(
             latent_dim=latent_dim,
             latent_channels=latent_channels,
             autoencoder=dcae,
-            trajectory_length=run.config['trajectory_length'],
+            repa_model=repa_model,
             lr=run.config['lr'],
             prompt_encoder=prompt_encoder,
-            prompt_dim=prompt_embedding_dim
+            prompt_dim=prompt_embedding_dim,
+            repa_dim=384,
+            repa_layer=8,
+            repa_weight=run.config['repa_weight']
         )
 
         print("Measuring FLOPs...")
         model = model.cuda()
         flops = measure_flops(
             model,
-            lambda: model.reverse_diffusion(
+            lambda: model.flow(
                 torch.randn(1, latent_channels, *latent_dim).cuda(), t=torch.tensor([0]).cuda(),
                 prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim)).cuda(),
                 prompt_mask=None)
@@ -128,7 +135,7 @@ def main(args):
             test_input = (torch.randn(1, input_channels, *input_dim).cuda(), ["test"], torch.ones((1, 2)).cuda())
         flops = measure_flops(
             model,
-            lambda: model.reverse_diffusion(
+            lambda: model.flow(
                 torch.randn(1, latent_channels, *latent_dim).cuda(), t=torch.tensor([0]).cuda(),
                 prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim), device=model.device).cuda(),
                 prompt_mask=None),
@@ -143,9 +150,9 @@ def main(args):
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
-            monitor="train_loss",
-            mode="min",
+            monitor=None # Loss is not a meaningful quantity to monitor for generative models
             every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
+            save_on_train_epoch_end=True,
             save_last=True
             )
         sample_callback = SampleCallback(

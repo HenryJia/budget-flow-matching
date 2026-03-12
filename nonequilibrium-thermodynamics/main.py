@@ -41,10 +41,10 @@ def main(args):
         logger = WandbLogger(project="nonequilibrium-thermodynamics", log_model="all")
 
         checkpoint_callback = ModelCheckpoint(
-            dirpath="./checkpoints",
-            monitor="train_loss",
-            mode="min",
-            every_n_epochs=10,
+            dirpath=checkpoint_dir,
+            monitor=None # Loss is not a meaningful quantity to monitor for generative models
+            every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
+            save_on_train_epoch_end=True,
             save_last=True
             )
         sample_callback = SampleCallback(input_dim=(input_channels, *input_dim), num_samples=16)
