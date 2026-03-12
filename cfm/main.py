@@ -67,7 +67,7 @@ def main(args):
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
-            monitor=None # Loss is not a meaningful quantity to monitor for generative models
+            monitor=None, # Loss is not a meaningful quantity to monitor for generative models
             every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
             save_on_train_epoch_end=True,
             save_last=True

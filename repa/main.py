@@ -36,7 +36,7 @@ class EMAWeightAveraging(WeightAveraging):
         return (step_idx is not None) and (step_idx >= 100)
 
 def main(args):
-    with wandb.init(config=args.config, project="ldm") as run:
+    with wandb.init(config=args.config, project="repa") as run:
         if run.config['dataset'] == "CelebA":
             transforms = tv.transforms.Compose([
                 #tv.transforms.Resize((256, 256)),
@@ -146,11 +146,11 @@ def main(args):
 
         print("\n\nStarting training...")
 
-        logger = WandbLogger(project="ldm", log_model="all")
+        logger = WandbLogger(project="repa", log_model="all")
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
-            monitor=None # Loss is not a meaningful quantity to monitor for generative models
+            monitor=None, # Loss is not a meaningful quantity to monitor for generative models
             every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
             save_on_train_epoch_end=True,
             save_last=True
@@ -161,6 +161,9 @@ def main(args):
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True)
+
+        if args.continue_from:
+            model.load_from_checkpoint(args.continue_from)
 
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
@@ -177,6 +180,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to the config file")
+    parser.add_argument("--continue_from", type=str, default=None, help="Path to a checkpoint to continue training from")
 
     args = parser.parse_args()
 
