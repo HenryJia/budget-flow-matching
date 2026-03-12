@@ -277,7 +277,7 @@ class REPAModel(L.LightningModule):
                 repa_target = self.repa_model(x.to(dtype=self.repa_model.dtype)).last_hidden_state
                 repa_target = torch.mean(repa_target, dim=1).to(dtype=self.dtype)
     
-            repa_loss = 1 - torch.abs(F.cosine_similarity(repa_state, repa_target.detach(), dim=-1))
+            repa_loss = 1 - F.cosine_similarity(repa_state, repa_target.detach(), dim=-1)
             repa_loss = self.repa_weight * repa_loss.mean()
 
             self.log("repa_loss", repa_loss, prog_bar=True)
