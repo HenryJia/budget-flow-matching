@@ -51,7 +51,7 @@ def main(args):
             latent_dim = (8, 8)
             latent_channels = 32
             prompt_encoder = None
-            prompt_embedding_dim = 768 # Basically just a random number to fit the arch. It's not used here
+            prompt_embedding_dim = 256 # Basically just a random number to fit the arch. It's not used here
             sample_prompts = None
 
         elif run.config['dataset'] == "PublicDomain":
@@ -92,7 +92,7 @@ def main(args):
             torch_dtype=torch.bfloat16
         )
         dcae = dcae.eval()
-        dcae = torch.compile(dcae, "max-autotune")
+        dcae.compile(options={"max-autotune" : True})
 
         # For the Representation Alignment, use DINOv2-small. It's a small model, but it should be enough to help us train
         # We do also need it to be light and fast, as we'll be running it at every step of the training loop
@@ -103,7 +103,7 @@ def main(args):
             torch_dtype=torch.bfloat16
         )
         repa_model = repa_model.eval()
-        repa_model = torch.compile(repa_model, "max-autotune")
+        repa_model.compile(options={"max-autotune" : True})
 
         model = REPAModel(
             latent_dim=latent_dim,
@@ -114,7 +114,7 @@ def main(args):
             prompt_encoder=prompt_encoder,
             prompt_dim=prompt_embedding_dim,
             repa_dim=384,
-            repa_layer=8,
+            repa_layer=run.config['repa_layer'],
             repa_weight=run.config['repa_weight']
         )
 
@@ -146,7 +146,7 @@ def main(args):
 
         print("\n\nStarting training...")
 
-        logger = WandbLogger(project="repa", log_model="all")
+        logger = WandbLogger(project="repa", log_model=False)
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,

@@ -10,13 +10,13 @@ from sentence_transformers import SentenceTransformer
 
 from diffusers import SanaTransformer2DModel
 from diffusers.utils import apply_lora_scale
-from transformers import DINOv2Model
 
 from torchdiffeq import odeint
 
 class REPATransformer2DModel(SanaTransformer2DModel):
     def __init__(self, repa_dim, repa_layer, num_attention_heads, attention_head_dim, *args, **kwargs):
         super().__init__(*args, **kwargs, num_attention_heads=num_attention_heads, attention_head_dim=attention_head_dim)
+
         self.repa_dim = repa_dim
         self.repa_layer = repa_layer
 
@@ -134,8 +134,9 @@ class REPATransformer2DModel(SanaTransformer2DModel):
         hidden_states = hidden_states.permute(0, 5, 1, 3, 2, 4)
         output = hidden_states.reshape(batch_size, -1, post_patch_height * p, post_patch_width * p)
 
-        # Do the REPA projection        
-        repa_state = torch.mean(self.repa_attn(repa_state, repa_state, repa_state), dim=1)
+        # Do the REPA projection
+        repa_state = self.repa_attn(repa_state, repa_state, repa_state, need_weights=False)[0]
+        repa_state = torch.mean(repa_state, dim=1)
         repa_state = self.repa_projection(repa_state)
 
         return (output, repa_state)
@@ -183,6 +184,7 @@ class REPAModel(L.LightningModule):
         self.lr = lr
         self.prompt_encoder = prompt_encoder
         self.prompt_dim = prompt_dim
+        self.repa_weight = repa_weight
 
         # Load Sana 600M config
         config = SanaTransformer2DModel.load_config(
@@ -202,14 +204,18 @@ class REPAModel(L.LightningModule):
 
         config["caption_channels"] = prompt_dim
 
-        config["repa_dim"] = repa_dim
-        config["repa_layer"] = repa_layer
+        #config["repa_dim"] = repa_dim
+        #config["repa_layer"] = repa_layer
 
-        self.flow_net = REPATransformer2DModel.from_config(config)
+        # We're going to have to do this manually because we're not using from config
+        config.pop('_class_name')
+        config.pop('_diffusers_version')
+
+        #self.flow_net = REPATransformer2DModel.from_config(config)
+        self.flow_net = REPATransformer2DModel(repa_dim=repa_dim, repa_layer=repa_layer, **config)
 
 
     def flow(self, latent_t, t, prompt_embeddings, prompt_mask, return_repa=False):
-        # Huggingface will take care of generating the time embedding fo us
         out, repa_state = self.flow_net(
             hidden_states=latent_t,
             encoder_hidden_states=prompt_embeddings,
@@ -228,20 +234,23 @@ class REPAModel(L.LightningModule):
         # The autoencoder in the forward diffusion process is not trained
         # It is also ungodly expensive, so we really don't want PyTorch to be tracking gradients through it
         with torch.no_grad():
-            x_1, epsilon_forward = self.forward_diffusion(x, t)
+            x_1 = self.autoencoder.encode(x.to(dtype=self.autoencoder.dtype)).latent
 
-        # Unlike diffusion models, our timestep is continuous in [0, 1]
-        t = torch.rand(size=(x_1.shape[0],), device=x_1.device)
+            # Unlike diffusion models, our timestep is continuous in [0, 1]
+            t = torch.rand(size=(x_1.shape[0],), device=x_1.device, dtype=x_1.dtype)
 
-        # Note: Unlike diffusion models, x_1 is the data and x_0 is our prior distribution (which is N(0, I))
-        x_0 = torch.randn_like(x_1)
+            # Note: Unlike diffusion models, x_1 is the data and x_0 is our prior distribution (which is N(0, I))
+            x_0 = torch.randn_like(x_1)
 
-        t_expand = t[:, None, None, None]
-        x_t = (1 - t_expand) * x + t_expand * x_1
+            t_expand = t[:, None, None, None]
+            x_t = (1 - t_expand) * x_0 + t_expand * x_1
 
-        target_velocity = x_1 - x_0
+            target_velocity = x_1 - x_0
 
-        with torch.no_grad():
+            target_velocity = target_velocity.to(dtype=self.dtype)
+            x_t = x_t.to(dtype=self.dtype)
+            t = t.to(dtype=self.dtype)
+
             if self.prompt_encoder is not None:
                 prompt = batch[1]
                 prompt_embeddings, prompt_mask = self.prompt_encoder(prompt)
@@ -265,10 +274,10 @@ class REPAModel(L.LightningModule):
 
         if self.repa_weight > 0:
             with torch.no_grad():
-                repa_target = self.repa_model(x).last_hidden_state
-                repa_target = torch.mean(repa_target, dim=1)
+                repa_target = self.repa_model(x.to(dtype=self.repa_model.dtype)).last_hidden_state
+                repa_target = torch.mean(repa_target, dim=1).to(dtype=self.dtype)
     
-            repa_loss = self.repa_weight * F.mse_loss(repa_state, repa_target.detach(), reduction='mean')
+            repa_loss = self.repa_weight * F.cosine_similarity(repa_state, repa_target.detach(), dim=-1).mean()
 
             self.log("repa_loss", repa_loss, prog_bar=True)
 
@@ -280,11 +289,12 @@ class REPAModel(L.LightningModule):
     # Override the train function to ensure the other models we're using stay in eval mode
     def train(self, mode=True):
         super().train(mode)
-        self.prompt_encoder.eval()
+        if self.prompt_encoder is not None:
+            self.prompt_encoder.eval()
         self.autoencoder.eval()
         self.repa_model.eval()
 
-    def forward(self, x, prompts=None, size=None, stepss=10):
+    def forward(self, x, prompts=None, size=None, steps=10):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
@@ -311,7 +321,7 @@ class REPAModel(L.LightningModule):
             # I honestly, do not entirely see the point of this. Maybe it gives better sample quality, but we want speed and simplicity
             t = torch.linspace(0, 1, steps=steps + 1, device=x.device)
 
-            ode = lambda t, x: self.flow(x, t, prompt_embeddings, prompt_mask, return_repa=False)
+            ode = lambda t, x: self.flow(x, t.expand((x.shape[0],)), prompt_embeddings, prompt_mask, return_repa=False)
             trajectory = odeint(ode, x_0, t, atol=1e-5, rtol=1e-3, method='dopri5')
 
             out = self.autoencoder.decode(trajectory[-1].to(dtype=self.autoencoder.dtype)).sample

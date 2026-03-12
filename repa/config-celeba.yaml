@@ -6,12 +6,12 @@ dataset:
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 64
+  value: 32
 
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 50
+  value: 20
 
 gpus:
   description: The number of GPUs to use for training
@@ -22,6 +22,10 @@ repa_weight:
   description: The weight to give to the REPA loss
   type: float
   value: 0.5
+repa_layer:
+  description: The layer of the REPA transformer to apply the REPA loss to (0-indexed)
+  type: int
+  value: 7
 lr: # The paper suggests that this is a good learning rate to use for smaller images. For larger images they used 2e-5
   description: The learning rate for training the model
   type: float
@@ -34,4 +38,4 @@ ema_decay:
 sample_frequency:
   description: The frequency (in epochs) at which to sample from the model and log the samples to wandb
   type: int
-  value: 50
+  value: 1

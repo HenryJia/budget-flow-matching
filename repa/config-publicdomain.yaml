@@ -26,6 +26,10 @@ repa_weight:
   description: The weight to give to the REPA loss
   type: float
   value: 0.5
+repa_layer:
+  description: The layer of the REPA transformer to apply the REPA loss to (0-indexed)
+  type: int
+  value: 7
 lr:
   description: The learning rate for training the model
   type: float

@@ -139,7 +139,7 @@ def main(args):
 
         print("\n\nStarting training...")
 
-        logger = WandbLogger(project="ldm", log_model="all")
+        logger = WandbLogger(project="ldm", log_model=False)
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
