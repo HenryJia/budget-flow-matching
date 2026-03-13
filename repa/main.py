@@ -89,7 +89,7 @@ def main(args):
         dcae = AutoencoderDC.from_pretrained(
             "Efficient-Large-Model/Sana_600M_1024px_diffusers",
             subfolder="vae",
-            torch_dtype=torch.bfloat16
+            torch_dtype=torch.float16 # True fp16 models are available for this
         )
         dcae = dcae.eval()
         dcae.compile(options={"max-autotune" : True})
