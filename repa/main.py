@@ -68,8 +68,8 @@ def main(args):
             sample_dir = "./samples_publicdomain"
 
             prompt_encoder = PromptEncoderWrapper(
-                encoder=AutoModel.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
-                tokeniser=AutoTokenizer.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+                encoder=AutoModel.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.float16),
+                tokeniser=AutoTokenizer.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.float16),
             )
 
             # plus 2 so our model knows the height and width of the image
@@ -100,7 +100,7 @@ def main(args):
         repa_model = AutoModel.from_pretrained(
             "facebook/dinov2-small",
             attn_implementation="flash_attention_2",
-            torch_dtype=torch.bfloat16
+            torch_dtype=torch.float16
         )
         repa_model = repa_model.eval()
         repa_model.compile(options={"max-autotune" : True})
