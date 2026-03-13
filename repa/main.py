@@ -172,6 +172,7 @@ def main(args):
             accelerator='gpu',
             devices=run.config['gpus'],
             callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
+            reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 

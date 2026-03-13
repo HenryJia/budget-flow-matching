@@ -204,6 +204,12 @@ class REPAModel(L.LightningModule):
 
         config["caption_channels"] = prompt_dim
 
+        config["dropout"] = 0.1 # A little bit of dropout is probably wise
+
+        config["sample_size"] = latent_dim[0]
+        config["in_channels"] = latent_channels
+        config["out_channels"] = latent_channels
+
         #config["repa_dim"] = repa_dim
         #config["repa_layer"] = repa_layer
 
@@ -295,7 +301,7 @@ class REPAModel(L.LightningModule):
         self.autoencoder.eval()
         self.repa_model.eval()
 
-    def forward(self, x, prompts=None, size=None, steps=10):
+    def forward(self, x, prompts=None, size=None, steps=1):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
