@@ -142,6 +142,17 @@ class REPATransformer2DModel(SanaTransformer2DModel):
         return (output, repa_state)
 
 
+class ViTWrapper(nn.Module):
+    def __init__(self, model, processor):
+        super().__init__()
+        self.model = model
+        self.processor = processor
+
+    def forward(self, x):
+        inputs = self.processor(x, return_tensors="pt").to(dtype=self.model.dtype)
+        return self.model(**inputs).last_hidden_state
+
+
 class PromptEncoderWrapper(nn.Module):
     def __init__(self, encoder, tokeniser=None):
         super().__init__()
@@ -193,7 +204,7 @@ class REPAModel(L.LightningModule):
         )
 
         # Reduce depth
-        #config["num_layers"] = 12
+        config["num_layers"] = 20
 
         # Reduce width
         config["num_attention_heads"] = 12
@@ -280,7 +291,7 @@ class REPAModel(L.LightningModule):
 
         if self.repa_weight > 0:
             with torch.no_grad():
-                repa_target = self.repa_model(x.to(dtype=self.repa_model.dtype)).last_hidden_state
+                repa_target = self.repa_model(x)
                 repa_target = torch.mean(repa_target, dim=1).to(dtype=self.dtype)
     
             repa_loss = 1 - F.cosine_similarity(repa_state, repa_target.detach(), dim=-1)
@@ -337,5 +348,5 @@ class REPAModel(L.LightningModule):
 
     def configure_optimizers(self):
         # Just use Adam and call it a day
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.flow_net.parameters(), lr=self.lr)
         return optimizer

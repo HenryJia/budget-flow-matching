@@ -16,12 +16,11 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.fabric.utilities.throughput import measure_flops
 
 from diffusers import AutoencoderDC
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoImageProcessor, AutoModel
 from sentence_transformers import SentenceTransformer
 from dataset import PublicDomainDataset
 
-
-from model import REPAModel, PromptEncoderWrapper
+from model import REPAModel, PromptEncoderWrapper, ViTWrapper
 from callbacks import SampleCallback
 
 import wandb
@@ -97,13 +96,14 @@ def main(args):
         # For the Representation Alignment, use DINOv2-small. It's a small model, but it should be enough to help us train
         # We do also need it to be light and fast, as we'll be running it at every step of the training loop
         # We could use DINOv3, but Facebook makes us fill out a form to get request access, so fuck them
+        repa_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
         repa_model = AutoModel.from_pretrained(
             "facebook/dinov2-small",
-            attn_implementation="flash_attention_2",
-            torch_dtype=torch.bfloat16
+            attn_implementation="sdpa",
+            torch_dtype=torch.float16
         )
-        repa_model = repa_model.eval()
-        repa_model.compile(options={"max-autotune" : True})
+        repa_model = ViTWrapper(repa_model, repa_processor)
+        repa_model = torch.compile(repa_model, "max-autotune")
 
         model = REPAModel(
             latent_dim=latent_dim,
@@ -128,7 +128,7 @@ def main(args):
                 prompt_mask=None)
         )
 
-        print(f"Forward Diffusion FLOPs: {flops / 1e9:.2f} GFLOPs")
+        print(f"Flow model FLOPs: {flops / 1e9:.2f} GFLOPs")
         if run.config['dataset'] == "CelebA":
             test_input = (torch.randn(1, input_channels, *input_dim).cuda(),)
         elif run.config['dataset'] == "PublicDomain":
