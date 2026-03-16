@@ -16,8 +16,8 @@ from rich.progress import Progress
 
 class HFDataset(Dataset):
     def __init__(self,
-        dataset_name, img_key="image_url", text_key="description",
-        split="train", transform=None, img_dir=None min_backoff_time=0.25):
+        dataset_name, img_key, text_key,
+        split="train", transform=None, img_dir=None, min_backoff_time=0.25):
 
         self.dataset_hf = datasets.load_dataset(dataset_name, split=split)
         self.transform = transform
@@ -26,7 +26,7 @@ class HFDataset(Dataset):
         self.img_key = img_key
         self.text_key = text_key
 
-        if not os.path.exists(self.img_dir):
+        if self.img_dir is not None and not os.path.exists(self.img_dir):
             os.makedirs(self.img_dir)
 
         self.backoff_time = self.min_backoff_time

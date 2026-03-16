@@ -65,6 +65,8 @@ def main(args):
                 dataset_name="nyuuzyou/publicdomainpictures", img_key="image_url", text_key="description", 
                 split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
                     tv.transforms.Resize(input_dim),
+                    tv.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+                    tv.transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
                     tv.transforms.ToTensor(),
                     tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             )
@@ -74,6 +76,8 @@ def main(args):
             #    dataset_name="Spawning/PD12M", img_key="url", text_key="caption",
             #    split="train", img_dir='../SpawningPD12M', transform=tv.transforms.Compose([
             #        tv.transforms.Resize(input_dim),
+            #        tv.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+            #        tv.transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
             #        tv.transforms.ToTensor(),
             #        tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             #)
@@ -81,8 +85,10 @@ def main(args):
             # Use a version of COCO that's been helpfully preprocessed by someone else on Huggingface
             coco = HFDataset(
                 dataset_name="jxie/coco_captions", img_key="image", text_key="caption",
-                split="train", img_dir='../coco_imgs', transform=tv.transforms.Compose([
+                split="train", img_dir=None, transform=tv.transforms.Compose([
                     tv.transforms.Resize(input_dim),
+                    tv.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
+                    tv.transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
                     tv.transforms.ToTensor(),
                     tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             )
@@ -157,7 +163,7 @@ def main(args):
         print(f"Flow model FLOPs: {flops / 1e9:.2f} GFLOPs")
         if run.config['dataset'] == "CelebA":
             test_input = (torch.randn(1, input_channels, *input_dim).cuda(),)
-        elif run.config['dataset'] == "PublicDomain":
+        elif run.config['dataset'] == "Combined":
             test_input = (torch.randn(1, input_channels, *input_dim).cuda(), ["test"], torch.ones((1, 2)).cuda())
         flops = measure_flops(
             model,
