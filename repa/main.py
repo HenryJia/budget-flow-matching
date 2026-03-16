@@ -18,7 +18,8 @@ from lightning.fabric.utilities.throughput import measure_flops
 from diffusers import AutoencoderDC
 from transformers import AutoTokenizer, AutoImageProcessor, AutoModel
 from sentence_transformers import SentenceTransformer
-from dataset import PublicDomainDataset
+
+from dataset import HFDataset, CombinedDatasetWrapper
 
 from model import REPAModel, PromptEncoderWrapper, ViTWrapper
 from callbacks import SampleCallback
@@ -35,7 +36,7 @@ class EMAWeightAveraging(WeightAveraging):
         return (step_idx is not None) and (step_idx >= 100)
 
 def main(args):
-    with wandb.init(config=args.config, project="repa") as run:
+    with wandb.init(config=args.config, project="repa", id=args.wandb_id, resume="allow", group="DDP") as run:
         if run.config['dataset'] == "CelebA":
             transforms = tv.transforms.Compose([
                 #tv.transforms.Resize((256, 256)),
@@ -53,18 +54,43 @@ def main(args):
             prompt_embedding_dim = 256 # Basically just a random number to fit the arch. It's not used here
             sample_prompts = None
 
-        elif run.config['dataset'] == "PublicDomain":
+        elif run.config['dataset'] == "Combined":
             input_dim = (256, 256)
             input_channels = 3
             latent_dim = (8, 8)
             latent_channels = 32
-            dataset = PublicDomainDataset(split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
-                tv.transforms.Resize(input_dim),
-                tv.transforms.ToTensor(),
-                tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # Rescale from [0, 1] to [-1, 1]
-            ]))
-            checkpoint_dir = "./checkpoints_publicdomain"
-            sample_dir = "./samples_publicdomain"
+    
+            # nyuuzyou/publicdomainpictures is relatively high quality but it is smaller (600k)
+            nyuuzyou = HFDataset(
+                dataset_name="nyuuzyou/publicdomainpictures", img_key="image_url", text_key="description", 
+                split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
+                    tv.transforms.Resize(input_dim),
+                    tv.transforms.ToTensor(),
+                    tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+            )
+
+            # Spawning/PD12M is larger but the captions are synthetic. Might be worth trying but for now we'llstick with nyuuzyou/publicdomainpictures
+            #pd12 = HFDataset(
+            #    dataset_name="Spawning/PD12M", img_key="url", text_key="caption",
+            #    split="train", img_dir='../SpawningPD12M', transform=tv.transforms.Compose([
+            #        tv.transforms.Resize(input_dim),
+            #        tv.transforms.ToTensor(),
+            #        tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+            #)
+
+            # Use a version of COCO that's been helpfully preprocessed by someone else on Huggingface
+            coco = HFDataset(
+                dataset_name="jxie/coco_captions", img_key="image", text_key="caption",
+                split="train", img_dir='../coco_imgs', transform=tv.transforms.Compose([
+                    tv.transforms.Resize(input_dim),
+                    tv.transforms.ToTensor(),
+                    tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+            )
+
+            dataset = CombinedDatasetWrapper([nyuuzyou, coco])
+
+            checkpoint_dir = "./checkpoints_combined"
+            sample_dir = "./samples_combined"
 
             prompt_encoder = PromptEncoderWrapper(
                 encoder=AutoModel.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
@@ -81,7 +107,7 @@ def main(args):
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
-        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=4, pin_memory=True)
+        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=16, pin_memory=True)
 
         # We are not training the autoencoder. This is far beyond our hardware capabilities
         # We'll use the Deep Compression Autoencoder from Huggingface Diffusers. We'll use the sana variant.
@@ -146,12 +172,12 @@ def main(args):
 
         print("\n\nStarting training...")
 
-        logger = WandbLogger(project="repa", log_model=False)
+        logger = WandbLogger(project="repa", log_model=False, id=run.id)
 
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
             monitor=None, # Loss is not a meaningful quantity to monitor for generative models
-            every_n_epochs=run.config['epochs'] // 10, # Save 10 checkpoints throughout training
+            every_n_epochs=1,
             save_on_train_epoch_end=True,
             save_last=True
             )
@@ -162,8 +188,6 @@ def main(args):
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True)
 
-        if args.continue_from:
-            model.load_from_checkpoint(args.continue_from)
 
         trainer = L.Trainer(
             max_epochs=run.config['epochs'],
@@ -176,12 +200,13 @@ def main(args):
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 
-        trainer.fit(model, dataloader)
+        trainer.fit(model, dataloader, ckpt_path=args.continue_from)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to the config file")
     parser.add_argument("--continue_from", type=str, default=None, help="Path to a checkpoint to continue training from")
+    parser.add_argument("--wandb_id", type=str, default=None, help="Wandb run id to continue logging to (if continuing from a checkpoint)")
 
     args = parser.parse_args()
 
