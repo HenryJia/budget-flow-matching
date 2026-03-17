@@ -65,8 +65,6 @@ def main(args):
                 dataset_name="nyuuzyou/publicdomainpictures", img_key="image_url", text_key="description", 
                 split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
                     tv.transforms.Resize(input_dim),
-                    tv.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-                    tv.transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
                     tv.transforms.ToTensor(),
                     tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             )
@@ -76,8 +74,6 @@ def main(args):
             #    dataset_name="Spawning/PD12M", img_key="url", text_key="caption",
             #    split="train", img_dir='../SpawningPD12M', transform=tv.transforms.Compose([
             #        tv.transforms.Resize(input_dim),
-            #        tv.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-            #        tv.transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
             #        tv.transforms.ToTensor(),
             #        tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             #)
@@ -87,8 +83,6 @@ def main(args):
                 dataset_name="jxie/coco_captions", img_key="image", text_key="caption",
                 split="train", img_dir=None, transform=tv.transforms.Compose([
                     tv.transforms.Resize(input_dim),
-                    tv.transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
-                    tv.transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1)),
                     tv.transforms.ToTensor(),
                     tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             )
@@ -113,7 +107,10 @@ def main(args):
         else:
             raise ValueError(f"Unknown dataset: {run.config['dataset']}")
 
-        dataloader = data.DataLoader(dataset, batch_size=run.config['batchsize'], shuffle=True, num_workers=16, pin_memory=True)
+        dataloader = data.DataLoader(
+            dataset, batch_size=run.config['batchsize'], shuffle=True,
+            num_workers=8, pin_memory=True, prefetch_factor=32 # Higher prefetch factor to cope with our shitty HDD
+        )
 
         # We are not training the autoencoder. This is far beyond our hardware capabilities
         # We'll use the Deep Compression Autoencoder from Huggingface Diffusers. We'll use the sana variant.
