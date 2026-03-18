@@ -1,5 +1,7 @@
 import argparse
 import pandas as pd
+import warnings
+warnings.filterwarnings("ignore", category=ResourceWarning) # Suppress resource warnings from the dataset
 
 import torch
 torch.set_float32_matmul_precision('medium')
@@ -87,7 +89,17 @@ def main(args):
                     tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
             )
 
-            dataset = CombinedDatasetWrapper([nyuuzyou, coco])
+            # SBU Captions dataset is supposed to be 1M images from Flickr with real captions. We only managed to get 850k of them because the rest were missing
+            # We'll use a version on Huggingface that's been helpfully preprocessed
+            sbu = HFDataset(
+                dataset_name="eaglewatch/sbucaptions", img_key="url", text_key="caption",
+                split="train", img_dir='../SBU_Captions', transform=tv.transforms.Compose([
+                    tv.transforms.Resize(input_dim),
+                    tv.transforms.ToTensor(),
+                    tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+            )
+
+            dataset = CombinedDatasetWrapper([nyuuzyou, coco, sbu])
 
             checkpoint_dir = "./checkpoints_combined"
             sample_dir = "./samples_combined"

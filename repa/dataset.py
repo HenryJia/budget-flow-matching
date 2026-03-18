@@ -1,6 +1,7 @@
 import os
 import time
 import requests
+import warnings
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from io import BytesIO
@@ -49,7 +50,7 @@ class HFDataset(Dataset):
                     image = Image.open(os.path.join(self.img_dir, f"{idx}.jpg"))
                     image = image.convert("RGB")
                 except Exception as e:
-                    print(f"Failed to load cached image {idx}, redownloading. Error: {e}")
+                    warnings.warn(f"Failed to load cached image {idx}, redownloading. Error: {e}", ResourceWarning)
                     os.remove(os.path.join(self.img_dir, f"{idx}.jpg"))
                     return self.__getitem__(idx) # Try again, this time it will download the image instead of loading from cache
             else:
@@ -64,7 +65,7 @@ class HFDataset(Dataset):
                         self.backoff_time = self.min_backoff_time # Reset backoff time after a successful request
                     elif response.status_code == 429: # Too Many Requests
                         time.sleep(self.backoff_time)
-                        print(f"Received 429 Too Many Requests for image {idx}, backing off for {self.backoff_time} seconds")
+                        warnings.warn(f"Received 429 Too Many Requests for image {idx}, backing off for {self.backoff_time} seconds")
                         self.backoff_time = min(self.backoff_time * 2, 32) # Exponential backoff
                         return self.__getitem__(idx) # Try again after backing off
                     else: # Any other error
@@ -75,10 +76,10 @@ class HFDataset(Dataset):
 
                     image.save(os.path.join(self.img_dir, f"{idx}.jpg")) # Cache the image so we don't have to download it again in the future
                 except Exception as e:
-                    print(f"Failed to download image {idx} from {url}, error: {e}. Skipping and loading the next one instead")
+                    warnings.warn(f"Failed to download image {idx} from {url}, error: {e}. Skipping and loading the next one instead", ResourceWarning)
                     return self.__getitem__((idx + 1) % len(self.dataset_hf)) # Just skip this image and try the next one
         else:
-            print(f"Unexpected image format for item {idx}: {type(img)}. Skipping and loading the next one instead")
+            warnings.warn(f"Unexpected image format for item {idx}: {type(img)}. Skipping and loading the next one instead", ResourceWarning)
             return self.__getitem__((idx + 1) % len(self.dataset_hf)) # Just skip this image and try the next one instead
         
         h, w = image.size
@@ -87,7 +88,7 @@ class HFDataset(Dataset):
             image = self.transform(image)
 
         if image is None or item[self.text_key] is None:
-            print(f"Failed to load image {idx} from {url}. Got None instead. Skipping and loading the next one instead")
+            warnings.warn(f"Failed to load image {idx} from {url}. Got None instead. Skipping and loading the next one instead", ResourceWarning)
             return self.__getitem__((idx + 1) % len(self.dataset_hf)) # Just skip this image and try the next one instead
 
         return image, item[self.text_key], size
