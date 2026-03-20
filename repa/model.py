@@ -239,6 +239,7 @@ class REPAModel(L.LightningModule):
             encoder_attention_mask=prompt_mask,
             timestep=t.to(dtype=latent_t.dtype) * 1000)
 
+
         if return_repa:
             return out, repa_state
         else:
@@ -251,7 +252,9 @@ class REPAModel(L.LightningModule):
         # The autoencoder in the forward diffusion process is not trained
         # It is also ungodly expensive, so we really don't want PyTorch to be tracking gradients through it
         with torch.no_grad():
-            x_1 = self.autoencoder.encode(x.to(dtype=self.autoencoder.dtype)).latent
+            # Note, as far as I'm aware from the Huggingface diffusers source code, they DO NOT apply the scaling factor for us
+            # We have to do it ourselves to ensure the magnitudes are correct for the velocity prediction task
+            x_1 = self.autoencoder.encode(x.to(dtype=self.autoencoder.dtype)).latent * self.autoencoder.config.scaling_factor
 
             # Unlike diffusion models, our timestep is continuous in [0, 1]
             t = torch.rand(size=(x_1.shape[0],), device=x_1.device, dtype=x_1.dtype)
@@ -342,7 +345,11 @@ class REPAModel(L.LightningModule):
             ode = lambda t, x: self.flow(x, t.expand((x.shape[0],)), prompt_embeddings, prompt_mask, return_repa=False)
             trajectory = odeint(ode, x_0, t, atol=1e-5, rtol=1e-3, method='dopri5')
 
-            out = self.autoencoder.decode(trajectory[-1].to(dtype=self.autoencoder.dtype)).sample
+            # Again, note that Huggingface's diffusers library does not apply the scaling factor for us
+            # We have to divide by it ourselves to ensure the magnitudes are correct for decoding with the autoencoder
+            latent = trajectory[-1] / self.autoencoder.config.scaling_factor
+
+            out = self.autoencoder.decode(latent.to(dtype=self.autoencoder.dtype)).sample
         return out
 
 
