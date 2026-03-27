@@ -94,6 +94,27 @@ class HFDataset(Dataset):
         return image, item[self.text_key], size
 
 
+# Like the HF dataset we have above, but with precomputed embeddings
+class HFEmbeddingDataset(Dataset):
+    def __init__(self, dataset_name, embedding_dir, split="train"):
+        self.dataset_hf = datasets.load_dataset(dataset_name, split=split)
+        self.embedding_dir = embedding_dir
+
+    def __len__(self):
+        return len(self.dataset_hf)
+
+    def __getitem__(self, idx):
+        precalc = torch.load(os.path.join(self.embedding_dir, f"{idx}_precalc.pt"))
+
+        img_embeddings = precalc['dcae_embedding']
+        repa_embeddings = precalc['repa_embedding']
+        prompt_embeddings = precalc['prompt_embedding']
+        prompt_mask = precalc['prompt_mask']
+        size = precalc['size']
+
+        return img_embeddings, repa_embeddings, prompt_embeddings, prompt_mask, size
+
+
 class CombinedDatasetWrapper(Dataset):
     def __init__(self, datasets):
         self.datasets = datasets
