@@ -12,7 +12,7 @@ import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
 
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging, RichProgressBar
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor, WeightAveraging, GradientAccumulationScheduler, RichProgressBar
 from lightning.pytorch.strategies import DDPStrategy
 from lightning.pytorch.loggers import WandbLogger
 from lightning.fabric.utilities.throughput import measure_flops
@@ -201,6 +201,7 @@ def main(args):
             frequency=run.config['sample_frequency'], num_samples=8, output_dir=sample_dir, prompts=sample_prompts)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
+        accumulator_callback = GradientAccumulationScheduler(scheduling={19: 8}) # Accumulate gradients after epoch 20 to simulate a larger batch size
         pb_callback = RichProgressBar(leave=True)
 
 
@@ -210,7 +211,7 @@ def main(args):
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, accumulator_callback, pb_callback],
             reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
