@@ -184,7 +184,7 @@ class REPAModel(L.LightningModule):
     def __init__(
             self, latent_dim, latent_channels, autoencoder, repa_model,
             lr, prompt_encoder=None, prompt_dim=768,
-            repa_dim=256, repa_layer=7, repa_weight=0.5
+            repa_dim=256, repa_layer=7, repa_weight=0.5,
             ):
         super(REPAModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
@@ -239,7 +239,6 @@ class REPAModel(L.LightningModule):
             encoder_attention_mask=prompt_mask,
             timestep=t.to(dtype=latent_t.dtype) * 1000)
 
-
         if return_repa:
             return out, repa_state
         else:
@@ -252,9 +251,7 @@ class REPAModel(L.LightningModule):
         # The autoencoder in the forward diffusion process is not trained
         # It is also ungodly expensive, so we really don't want PyTorch to be tracking gradients through it
         with torch.no_grad():
-            # Note, as far as I'm aware from the Huggingface diffusers source code, they DO NOT apply the scaling factor for us
-            # We have to do it ourselves to ensure the magnitudes are correct for the velocity prediction task
-            x_1 = self.autoencoder.encode(x.to(dtype=self.autoencoder.dtype)).latent * self.autoencoder.config.scaling_factor
+            x_1 = batch['dcae_embedding'] # Precomputed DCAE embeddings are already scaled by the scaling factor
 
             # Unlike diffusion models, our timestep is continuous in [0, 1]
             t = torch.rand(size=(x_1.shape[0],), device=x_1.device, dtype=x_1.dtype)
@@ -272,20 +269,12 @@ class REPAModel(L.LightningModule):
             t = t.to(dtype=self.dtype)
 
             if self.prompt_encoder is not None:
-                prompt = batch[1]
-                prompt_embeddings, prompt_mask = self.prompt_encoder(prompt)
-                prompt_embeddings = prompt_embeddings.to(dtype=self.dtype)
-                if len(prompt_embeddings.shape) == 2:
-                    prompt_embeddings = prompt_embeddings[:, None, :]
-                if prompt_mask is not None:
-                    prompt_mask = prompt_mask.to(dtype=self.dtype)
+                prompt_embeddings = batch['prompt_embedding']
+                prompt_mask = batch['prompt_mask']
+                size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
             else:
                 prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
                 prompt_mask = None
-
-            if len(batch) == 3:
-                size = batch[2][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
-                prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
 
         velocity, repa_state = self.flow(x_t, t, prompt_embeddings, prompt_mask, return_repa=True)
 
@@ -294,7 +283,8 @@ class REPAModel(L.LightningModule):
 
         if self.repa_weight > 0:
             with torch.no_grad():
-                repa_target = self.repa_model(x)
+                repa_target = batch['repa_embedding']
+
                 repa_target = torch.mean(repa_target, dim=1).to(dtype=self.dtype)
     
             repa_loss = 1 - F.cosine_similarity(repa_state, repa_target.detach(), dim=-1)

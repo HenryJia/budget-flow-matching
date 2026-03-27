@@ -21,7 +21,7 @@ from diffusers import AutoencoderDC
 from transformers import AutoTokenizer, AutoImageProcessor, AutoModel
 from sentence_transformers import SentenceTransformer
 
-from dataset import HFDataset, CombinedDatasetWrapper
+from dataset import HFEmbeddingDataset, CombinedDatasetWrapper
 
 from model import REPAModel, PromptEncoderWrapper, ViTWrapper
 from callbacks import SampleCallback
@@ -39,64 +39,26 @@ class EMAWeightAveraging(WeightAveraging):
 
 def main(args):
     with wandb.init(config=args.config, project="repa", id=args.wandb_id, resume="allow", group="DDP") as run:
-        if run.config['dataset'] == "CelebA":
-            transforms = tv.transforms.Compose([
-                #tv.transforms.Resize((256, 256)),
-                tv.transforms.ToTensor(),
-                tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)) # Rescale from [0, 1] to [-1, 1]
-            ])
-            dataset = tv.datasets.ImageFolder(root='../celebahq256_imgs/train', transform=transforms)
-            checkpoint_dir = "./checkpoints_celeba"
-            sample_dir = "./samples_celeba"
-            input_dim = (256, 256)
-            input_channels = 3
-            latent_dim = (8, 8)
-            latent_channels = 32
-            prompt_encoder = None
-            prompt_embedding_dim = 256 # Basically just a random number to fit the arch. It's not used here
-            sample_prompts = None
-
-        elif run.config['dataset'] == "Combined":
+        if run.config['dataset'] == "Combined":
             input_dim = (256, 256)
             input_channels = 3
             latent_dim = (8, 8)
             latent_channels = 32
     
             # nyuuzyou/publicdomainpictures is relatively high quality but it is smaller (600k)
-            nyuuzyou = HFDataset(
-                dataset_name="nyuuzyou/publicdomainpictures", img_key="image_url", text_key="description", 
-                split="train", img_dir='../publicdomain_imgs', transform=tv.transforms.Compose([
-                    tv.transforms.Resize(input_dim),
-                    tv.transforms.ToTensor(),
-                    tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+            nyuuzyou = HFEmbeddingDataset(
+                dataset_name="nyuuzyou/publicdomainpictures", embedding_dir='../publicdomain_imgs', split="train"
             )
-
-            # Spawning/PD12M is larger but the captions are synthetic. Might be worth trying but for now we'llstick with nyuuzyou/publicdomainpictures
-            #pd12 = HFDataset(
-            #    dataset_name="Spawning/PD12M", img_key="url", text_key="caption",
-            #    split="train", img_dir='../SpawningPD12M', transform=tv.transforms.Compose([
-            #        tv.transforms.Resize(input_dim),
-            #        tv.transforms.ToTensor(),
-            #        tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
-            #)
 
             # Use a version of COCO that's been helpfully preprocessed by someone else on Huggingface
-            coco = HFDataset(
-                dataset_name="jxie/coco_captions", img_key="image", text_key="caption",
-                split="train", img_dir=None, transform=tv.transforms.Compose([
-                    tv.transforms.Resize(input_dim),
-                    tv.transforms.ToTensor(),
-                    tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
-            )
+            coco = HFEmbeddingDataset(
+                dataset_name="jxie/coco_captions", embedding_dir='../coco_imgs', split="train"
+            )            
 
             # SBU Captions dataset is supposed to be 1M images from Flickr with real captions. We only managed to get 850k of them because the rest were missing
             # We'll use a version on Huggingface that's been helpfully preprocessed
-            sbu = HFDataset(
-                dataset_name="eaglewatch/sbucaptions", img_key="url", text_key="caption",
-                split="train", img_dir='../SBU_Captions', transform=tv.transforms.Compose([
-                    tv.transforms.Resize(input_dim),
-                    tv.transforms.ToTensor(),
-                    tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+            sbu = HFEmbeddingDataset(
+                dataset_name="eaglewatch/sbucaptions", embedding_dir='../SBU_Captions', split="train"
             )
 
             dataset = CombinedDatasetWrapper([nyuuzyou, coco, sbu])
@@ -105,8 +67,8 @@ def main(args):
             sample_dir = "./samples_combined"
 
             prompt_encoder = PromptEncoderWrapper(
-                encoder=AutoModel.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
-                tokeniser=AutoTokenizer.from_pretrained(run.config['prompt_encoder'], attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+                encoder=AutoModel.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+                tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
             )
 
             # plus 2 so our model knows the height and width of the image

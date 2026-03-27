@@ -28,6 +28,8 @@ def run(dataset, i, device):
         img = img.unsqueeze(0).half()
         img = img.to(device)
 
+        # Note, as far as I'm aware from the Huggingface diffusers source code, they DO NOT apply the scaling factor for us
+        # We have to do it ourselves to ensure the magnitudes are correct for the velocity prediction task
         dcae_embedding = dcae.encode(img).latent * dcae.config.scaling_factor
         repa_embedding = repa_model(img)
         prompt_embedding, prompt_mask = prompt_encoder(caption)
@@ -65,15 +67,6 @@ if __name__ == "__main__":
                 tv.transforms.ToTensor(),
                 tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
         )
-
-        # Spawning/PD12M is larger but the captions are synthetic. Might be worth trying but for now we'llstick with nyuuzyou/publicdomainpictures
-        #pd12 = HFDataset(
-        #    dataset_name="Spawning/PD12M", img_key="url", text_key="caption",
-        #    split="train", img_dir='../SpawningPD12M', transform=tv.transforms.Compose([
-        #        tv.transforms.Resize(input_dim),
-        #        tv.transforms.ToTensor(),
-        #        tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
-        #)
 
     elif args.dataset == "coco":
         # Use a version of COCO that's been helpfully preprocessed by someone else on Huggingface
@@ -128,6 +121,9 @@ if __name__ == "__main__":
     prompt_encoder = prompt_encoder.to(device)
 
     # Use threads instead of processes to lower overhead, we don't need to worry about GIL as much here
+    # Honestly, this is not the most efficient as it doesn't properly batch things
+    # But, it is simple and readable, which isn't that bad of a tradeoff
+    # And we can run multiple of these scripts in parallel for the different datasets which evens it out a bit
     pool = mp.pool.ThreadPool(processes=args.num_workers)
 
     with Progress() as progress:

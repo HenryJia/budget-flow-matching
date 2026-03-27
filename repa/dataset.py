@@ -106,13 +106,14 @@ class HFEmbeddingDataset(Dataset):
     def __getitem__(self, idx):
         precalc = torch.load(os.path.join(self.embedding_dir, f"{idx}_precalc.pt"))
 
-        img_embeddings = precalc['dcae_embedding']
-        repa_embeddings = precalc['repa_embedding']
-        prompt_embeddings = precalc['prompt_embedding']
-        prompt_mask = precalc['prompt_mask']
-        size = precalc['size']
+        #img_embeddings = precalc['dcae_embedding']
+        #repa_embeddings = precalc['repa_embedding']
+        #prompt_embeddings = precalc['prompt_embedding']
+        #prompt_mask = precalc['prompt_mask']
+        #size = precalc['size']
 
-        return img_embeddings, repa_embeddings, prompt_embeddings, prompt_mask, size
+        #return img_embeddings, repa_embeddings, prompt_embeddings, prompt_mask, size
+        return precalc # PyTorch dataloaders will work with dicts
 
 
 class CombinedDatasetWrapper(Dataset):
