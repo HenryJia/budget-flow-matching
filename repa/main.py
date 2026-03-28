@@ -1,7 +1,7 @@
 import argparse
 import pandas as pd
 import warnings
-warnings.filterwarnings("ignore", category=ResourceWarning) # Suppress resource warnings from the dataset
+#warnings.filterwarnings("ignore", category=ResourceWarning) # Suppress resource warnings from the dataset
 
 import torch
 torch.set_float32_matmul_precision('medium')
@@ -52,7 +52,7 @@ def main(args):
 
             # Use a version of COCO that's been helpfully preprocessed by someone else on Huggingface
             coco = HFEmbeddingDataset(
-                dataset_name="jxie/coco_captions", embedding_dir='../coco_imgs', split="train"
+                dataset_name="jxie/coco_captions", embedding_dir='../coco', split="train"
             )            
 
             # SBU Captions dataset is supposed to be 1M images from Flickr with real captions. We only managed to get 850k of them because the rest were missing
@@ -136,7 +136,7 @@ def main(args):
             test_input = {
                 'dcae_embedding': torch.randn(1, latent_channels, *latent_dim).cuda(),
                 'repa_embedding': torch.randn(1, 384).cuda(),
-                'prompt_embedding': torch.zeros((1, 128, prompt_embedding_dim)).cuda(),
+                'prompt_embedding': torch.zeros((1, 128, prompt_embedding_dim - 2)).cuda(),
                 'prompt_mask': torch.zeros((1, 128), dtype=torch.bool).cuda(),
                 'size': torch.ones((1, 2)).cuda()
             }

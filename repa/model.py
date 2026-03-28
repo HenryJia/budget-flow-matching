@@ -268,7 +268,9 @@ class REPAModel(L.LightningModule):
             if self.prompt_encoder is not None:
                 prompt_embeddings = batch['prompt_embedding'].to(dtype=self.dtype)
                 prompt_mask = batch['prompt_mask']
-                size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1)).to(dtype=self.dtype)
+
+                size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
+                prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
             else:
                 prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
                 prompt_mask = None
