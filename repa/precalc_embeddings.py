@@ -1,9 +1,8 @@
 import os
 import argparse
-import multiprocessing as mp
 import pandas as pd
 import warnings
-warnings.filterwarnings("ignore", category=ResourceWarning) # Suppress resource warnings from the dataset
+#warnings.filterwarnings("ignore", category=ResourceWarning) # Suppress resource warnings from the dataset
 
 import torch
 torch.set_float32_matmul_precision('medium')
@@ -22,28 +21,7 @@ from model import PromptEncoderWrapper, ViTWrapper
 from rich.progress import Progress
 
 
-def run(dataset, i, device):
-    img, caption, size = dataset[i]
-    with torch.no_grad():
-        img = img.unsqueeze(0).half()
-        img = img.to(device)
 
-        # Note, as far as I'm aware from the Huggingface diffusers source code, they DO NOT apply the scaling factor for us
-        # We have to do it ourselves to ensure the magnitudes are correct for the velocity prediction task
-        dcae_embedding = dcae.encode(img).latent * dcae.config.scaling_factor
-        repa_embedding = repa_model(img)
-        prompt_embedding, prompt_mask = prompt_encoder(caption)
-
-    # Save the embeddings to disk as .pt files
-    torch.save({
-        'dcae_embedding': dcae_embedding.cpu(),
-        'repa_embedding': repa_embedding.cpu(),
-        'prompt_embedding': prompt_embedding.cpu(),
-        'prompt_mask': prompt_mask.cpu(),
-        'size': size,
-    }, os.path.join(dataset.img_dir, f"{i}_precalc.pt"))
-
-    return True
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -114,26 +92,39 @@ if __name__ == "__main__":
     )
     prompt_encoder = prompt_encoder.eval()
 
+    # Higher prefetch factor to cope with our shitty HDD
+    dataloader = data.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=args.num_workers, pin_memory=True, prefetch_factor=32)
+
     device = torch.device(args.device)
 
     dcae = dcae.to(device)
     repa_model = repa_model.to(device)
     prompt_encoder = prompt_encoder.to(device)
 
-    # Use threads instead of processes to lower overhead, we don't need to worry about GIL as much here
-    # Honestly, this is not the most efficient as it doesn't properly batch things
-    # But, it is simple and readable, which isn't that bad of a tradeoff
-    # And we can run multiple of these scripts in parallel for the different datasets which evens it out a bit
-    pool = mp.pool.ThreadPool(processes=args.num_workers)
-
     with Progress() as progress:
-        def callback(result):
+
+        task = progress.add_task("[cyan]Precomputing embeddings...", total=len(dataloader))
+        for batch in dataloader:
+            idxs, img, caption, size = batch
+            with torch.no_grad():
+                img = img.half()
+                img = img.to(device)
+
+                # Note, as far as I'm aware from the Huggingface diffusers source code, they DO NOT apply the scaling factor for us
+                # We have to do it ourselves to ensure the magnitudes are correct for the velocity prediction task
+                dcae_embedding = dcae.encode(img).latent * dcae.config.scaling_factor
+                repa_embedding = repa_model((img + 1.0) / 2.0 * 255.0) # Rescale for DinoV2, which I think expects things in [0, 255]
+                repa_embedding = torch.mean(repa_embedding, dim=1) # Take the mean over the spatial dimension to save memory
+                prompt_embedding, prompt_mask = prompt_encoder(caption)
+
+                # Unbatch and save the embeddings to disk as .pt files
+                for i, idx in enumerate(idxs):
+                    torch.save({
+                        'dcae_embedding': dcae_embedding[i].cpu(),
+                        'repa_embedding': repa_embedding[i].cpu(),
+                        'prompt_embedding': prompt_embedding[i].cpu(),
+                        'prompt_mask': prompt_mask[i].cpu(),
+                        'size': size[i],
+                    }, os.path.join(dataset.img_dir, f"{idx}_precalc.pt"))
+
             progress.update(task, advance=1)
-
-        task = progress.add_task("[cyan]Precomputing embeddings...", total=len(dataset))
-        for i in range(len(dataset)):
-            pool.apply_async(run, args=(dataset, i, device), callback=callback)
-
-        pool.close()
-        pool.join()
-

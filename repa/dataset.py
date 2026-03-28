@@ -91,7 +91,7 @@ class HFDataset(Dataset):
             warnings.warn(f"Failed to load image {idx} from {url}. Got None instead. Skipping and loading the next one instead", ResourceWarning)
             return self.__getitem__((idx + 1) % len(self.dataset_hf)) # Just skip this image and try the next one instead
 
-        return image, item[self.text_key], size
+        return idx, image, item[self.text_key], size
 
 
 # Like the HF dataset we have above, but with precomputed embeddings
@@ -104,7 +104,12 @@ class HFEmbeddingDataset(Dataset):
         return len(self.dataset_hf)
 
     def __getitem__(self, idx):
-        precalc = torch.load(os.path.join(self.embedding_dir, f"{idx}_precalc.pt"))
+        if os.path.exists(os.path.join(self.embedding_dir, f"{idx}_precalc.pt")):
+            precalc = torch.load(os.path.join(self.embedding_dir, f"{idx}_precalc.pt"))
+            return precalc
+        else:
+            warnings.warn(f"Precomputed embeddings for item {idx} not found. Getting the next item instead.", UserWarning)
+            return self.__getitem__((idx + 1) % len(self.dataset_hf))
 
         #img_embeddings = precalc['dcae_embedding']
         #repa_embeddings = precalc['repa_embedding']
@@ -113,7 +118,6 @@ class HFEmbeddingDataset(Dataset):
         #size = precalc['size']
 
         #return img_embeddings, repa_embeddings, prompt_embeddings, prompt_mask, size
-        return precalc # PyTorch dataloaders will work with dicts
 
 
 class CombinedDatasetWrapper(Dataset):

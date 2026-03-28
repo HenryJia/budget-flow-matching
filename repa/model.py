@@ -182,7 +182,7 @@ class PromptEncoderWrapper(nn.Module):
 
 class REPAModel(L.LightningModule):
     def __init__(
-            self, latent_dim, latent_channels, autoencoder, repa_model,
+            self, latent_dim, latent_channels, autoencoder,
             lr, prompt_encoder=None, prompt_dim=768,
             repa_dim=256, repa_layer=7, repa_weight=0.5,
             ):
@@ -191,7 +191,6 @@ class REPAModel(L.LightningModule):
         # The reference implementation does a fair bit of more complicated stuff which I think is a tad esoteric
 
         self.autoencoder = autoencoder
-        self.repa_model = repa_model
         self.lr = lr
         self.prompt_encoder = prompt_encoder
         self.prompt_dim = prompt_dim
@@ -204,7 +203,7 @@ class REPAModel(L.LightningModule):
         )
 
         # Reduce depth
-        config["num_layers"] = 20
+        #config["num_layers"] = 20
 
         # Reduce width
         config["num_attention_heads"] = 12
@@ -246,12 +245,10 @@ class REPAModel(L.LightningModule):
 
 
     def training_step(self, batch, batch_idx):
-        x = batch[0]
-
         # The autoencoder in the forward diffusion process is not trained
         # It is also ungodly expensive, so we really don't want PyTorch to be tracking gradients through it
         with torch.no_grad():
-            x_1 = batch['dcae_embedding'] # Precomputed DCAE embeddings are already scaled by the scaling factor
+            x_1 = batch['dcae_embedding'].to(dtype=self.dtype) # Precomputed DCAE embeddings are already scaled by the scaling factor
 
             # Unlike diffusion models, our timestep is continuous in [0, 1]
             t = torch.rand(size=(x_1.shape[0],), device=x_1.device, dtype=x_1.dtype)
@@ -269,9 +266,9 @@ class REPAModel(L.LightningModule):
             t = t.to(dtype=self.dtype)
 
             if self.prompt_encoder is not None:
-                prompt_embeddings = batch['prompt_embedding']
+                prompt_embeddings = batch['prompt_embedding'].to(dtype=self.dtype)
                 prompt_mask = batch['prompt_mask']
-                size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
+                size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1)).to(dtype=self.dtype)
             else:
                 prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
                 prompt_mask = None
@@ -283,9 +280,7 @@ class REPAModel(L.LightningModule):
 
         if self.repa_weight > 0:
             with torch.no_grad():
-                repa_target = batch['repa_embedding']
-
-                repa_target = torch.mean(repa_target, dim=1).to(dtype=self.dtype)
+                repa_target = batch['repa_embedding'].to(dtype=self.dtype)
     
             repa_loss = 1 - F.cosine_similarity(repa_state, repa_target.detach(), dim=-1)
             repa_loss = self.repa_weight * repa_loss.mean()
@@ -303,7 +298,6 @@ class REPAModel(L.LightningModule):
         if self.prompt_encoder is not None:
             self.prompt_encoder.eval()
         self.autoencoder.eval()
-        self.repa_model.eval()
 
     def forward(self, x, prompts=None, size=None, steps=1):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory

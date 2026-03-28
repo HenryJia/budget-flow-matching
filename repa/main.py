@@ -99,20 +99,19 @@ def main(args):
         # For the Representation Alignment, use DINOv2-small. It's a small model, but it should be enough to help us train
         # We do also need it to be light and fast, as we'll be running it at every step of the training loop
         # We could use DINOv3, but Facebook makes us fill out a form to get request access, so fuck them
-        repa_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
-        repa_model = AutoModel.from_pretrained(
-            "facebook/dinov2-small",
-            attn_implementation="sdpa",
-            torch_dtype=torch.float16
-        )
-        repa_model = ViTWrapper(repa_model, repa_processor)
-        repa_model = torch.compile(repa_model, "max-autotune")
+        # repa_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
+        # repa_model = AutoModel.from_pretrained(
+        #     "facebook/dinov2-small",
+        #     attn_implementation="sdpa",
+        #     torch_dtype=torch.float16
+        # )
+        # repa_model = ViTWrapper(repa_model, repa_processor)
+        # repa_model = torch.compile(repa_model, "max-autotune")
 
         model = REPAModel(
             latent_dim=latent_dim,
             latent_channels=latent_channels,
             autoencoder=dcae,
-            repa_model=repa_model,
             lr=run.config['lr'],
             prompt_encoder=prompt_encoder,
             prompt_dim=prompt_embedding_dim,
@@ -132,10 +131,15 @@ def main(args):
         )
 
         print(f"Flow model FLOPs: {flops / 1e9:.2f} GFLOPs")
-        if run.config['dataset'] == "CelebA":
-            test_input = (torch.randn(1, input_channels, *input_dim).cuda(),)
-        elif run.config['dataset'] == "Combined":
-            test_input = (torch.randn(1, input_channels, *input_dim).cuda(), ["test"], torch.ones((1, 2)).cuda())
+        if run.config['dataset'] == "Combined":
+            #test_input = (torch.randn(1, input_channels, *input_dim).cuda(), ["test"], torch.ones((1, 2)).cuda())
+            test_input = {
+                'dcae_embedding': torch.randn(1, latent_channels, *latent_dim).cuda(),
+                'repa_embedding': torch.randn(1, 384).cuda(),
+                'prompt_embedding': torch.zeros((1, 128, prompt_embedding_dim)).cuda(),
+                'prompt_mask': torch.zeros((1, 128), dtype=torch.bool).cuda(),
+                'size': torch.ones((1, 2)).cuda()
+            }
         flops = measure_flops(
             model,
             lambda: model.flow(
@@ -163,7 +167,6 @@ def main(args):
             frequency=run.config['sample_frequency'], num_samples=8, output_dir=sample_dir, prompts=sample_prompts)
         lr_monitor = LearningRateMonitor(logging_interval='step')
         ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
-        accumulator_callback = GradientAccumulationScheduler(scheduling={19: 8}) # Accumulate gradients after epoch 20 to simulate a larger batch size
         pb_callback = RichProgressBar(leave=True)
 
 
@@ -173,7 +176,8 @@ def main(args):
             logger=logger,
             accelerator='gpu',
             devices=run.config['gpus'],
-            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, accumulator_callback, pb_callback],
+            accumulate_grad_batches=run.config['accumulate_grad_batches'],
+            callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
             reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )

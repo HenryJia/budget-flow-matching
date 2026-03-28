@@ -6,7 +6,11 @@ dataset:
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 48 # Saturates 2 RTX 3090s
+  value: 64 # Saturates 2 RTX 3090s
+accumulate_grad_batches:
+  description: The number of batches to accumulate gradients for before performing an optimizer step. Effective batch size = batchsize * accumulate_grad_batches
+  type: int
+  value: 8
 
 epochs:
   description: The number of epochs to train the model for
