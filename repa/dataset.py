@@ -108,7 +108,7 @@ class HFEmbeddingDataset(Dataset):
             precalc = torch.load(os.path.join(self.embedding_dir, f"{idx}_precalc.pt"))
             return precalc
         else:
-            warnings.warn(f"Precomputed embeddings for item {idx} not found. Getting the next item instead.", ResourceWarning)
+            warnings.warn(f"Precomputed embeddings for item {idx} not found in {self.embedding_dir}. Getting the next item instead.", ResourceWarning)
             return self.__getitem__((idx + 1) % len(self.dataset_hf))
 
         #img_embeddings = precalc['dcae_embedding']
