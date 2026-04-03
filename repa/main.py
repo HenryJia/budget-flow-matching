@@ -40,7 +40,16 @@ class EMAWeightAveraging(WeightAveraging):
 def train(trainer, model, dataloader, ckpt_path): # Move this to a separate function for DDP
     trainer.fit(model, dataloader, ckpt_path=ckpt_path)
 
-def main(args):
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, required=True, help="Path to the config file")
+    parser.add_argument("--continue_from", type=str, default=None, help="Path to a checkpoint to continue training from")
+    parser.add_argument("--wandb_id", type=str, default=None, help="Wandb run id to continue logging to (if continuing from a checkpoint)")
+
+    args = parser.parse_args()
+
+
     with wandb.init(config=args.config, project="repa", id=args.wandb_id, resume="allow", group="DDP") as run:
         if run.config['dataset'] == "Combined":
             input_dim = (256, 256)
@@ -111,17 +120,31 @@ def main(args):
         # repa_model = ViTWrapper(repa_model, repa_processor)
         # repa_model = torch.compile(repa_model, "max-autotune")
 
-        model = REPAModel(
-            latent_dim=latent_dim,
-            latent_channels=latent_channels,
-            autoencoder=dcae,
-            lr=run.config['lr'],
-            prompt_encoder=prompt_encoder,
-            prompt_dim=prompt_embedding_dim,
-            repa_dim=384,
-            repa_layer=run.config['repa_layer'],
-            repa_weight=run.config['repa_weight']
-        )
+        if args.continue_from:
+            model = REPAModel.load_from_checkpoint(
+                args.continue_from,
+                latent_dim=latent_dim,
+                latent_channels=latent_channels,
+                autoencoder=dcae,
+                lr=run.config['lr'],
+                prompt_encoder=prompt_encoder,
+                prompt_dim=prompt_embedding_dim,
+                repa_dim=384,
+                repa_layer=run.config['repa_layer'],
+                repa_weight=run.config['repa_weight']
+            )
+        else:
+            model = REPAModel(
+                latent_dim=latent_dim,
+                latent_channels=latent_channels,
+                autoencoder=dcae,
+                lr=run.config['lr'],
+                prompt_encoder=prompt_encoder,
+                prompt_dim=prompt_embedding_dim,
+                repa_dim=384,
+                repa_layer=run.config['repa_layer'],
+                repa_weight=run.config['repa_weight']
+            )
 
         print("Measuring FLOPs...")
         model = model.cuda()
@@ -188,13 +211,3 @@ def main(args):
 
         #trainer.fit(model, dataloader, ckpt_path=args.continue_from)
         train(trainer, model, dataloader, ckpt_path=args.continue_from)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, required=True, help="Path to the config file")
-    parser.add_argument("--continue_from", type=str, default=None, help="Path to a checkpoint to continue training from")
-    parser.add_argument("--wandb_id", type=str, default=None, help="Wandb run id to continue logging to (if continuing from a checkpoint)")
-
-    args = parser.parse_args()
-
-    main(args)
