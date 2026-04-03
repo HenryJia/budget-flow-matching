@@ -343,3 +343,14 @@ class REPAModel(L.LightningModule):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.flow_net.parameters(), lr=self.lr)
         return optimizer
+
+
+    # Note, we often want to pause and continue training with different learning rates
+    # But lightning's checkpointing keeps overwriting our new learning rates with the old ones
+    # Intercept the on_load_checkpoint callback to deal with this
+    def on_load_checkpoint(self, checkpoint):
+        if 'optimizer_states' in checkpoint:
+            for optimizer_state in checkpoint['optimizer_states']:
+                for param_group in optimizer_state['param_groups']:
+                    assert 'lr' in param_group, "Learning rate not found in checkpoint optimizer state"
+                    param_group['lr'] = self.lr

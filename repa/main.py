@@ -37,9 +37,6 @@ class EMAWeightAveraging(WeightAveraging):
         # Start after 100 steps.
         return (step_idx is not None) and (step_idx >= 100)
 
-def train(trainer, model, dataloader, ckpt_path): # Move this to a separate function for DDP
-    trainer.fit(model, dataloader, ckpt_path=ckpt_path)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -120,31 +117,17 @@ if __name__ == "__main__":
         # repa_model = ViTWrapper(repa_model, repa_processor)
         # repa_model = torch.compile(repa_model, "max-autotune")
 
-        if args.continue_from:
-            model = REPAModel.load_from_checkpoint(
-                args.continue_from,
-                latent_dim=latent_dim,
-                latent_channels=latent_channels,
-                autoencoder=dcae,
-                lr=run.config['lr'],
-                prompt_encoder=prompt_encoder,
-                prompt_dim=prompt_embedding_dim,
-                repa_dim=384,
-                repa_layer=run.config['repa_layer'],
-                repa_weight=run.config['repa_weight']
-            )
-        else:
-            model = REPAModel(
-                latent_dim=latent_dim,
-                latent_channels=latent_channels,
-                autoencoder=dcae,
-                lr=run.config['lr'],
-                prompt_encoder=prompt_encoder,
-                prompt_dim=prompt_embedding_dim,
-                repa_dim=384,
-                repa_layer=run.config['repa_layer'],
-                repa_weight=run.config['repa_weight']
-            )
+        model = REPAModel(
+            latent_dim=latent_dim,
+            latent_channels=latent_channels,
+            autoencoder=dcae,
+            lr=run.config['lr'],
+            prompt_encoder=prompt_encoder,
+            prompt_dim=prompt_embedding_dim,
+            repa_dim=384,
+            repa_layer=run.config['repa_layer'],
+            repa_weight=run.config['repa_weight']
+        )
 
         print("Measuring FLOPs...")
         model = model.cuda()
@@ -209,5 +192,4 @@ if __name__ == "__main__":
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 
-        #trainer.fit(model, dataloader, ckpt_path=args.continue_from)
-        train(trainer, model, dataloader, ckpt_path=args.continue_from)
+        trainer.fit(model, dataloader, ckpt_path=args.continue_from)
