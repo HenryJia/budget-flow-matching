@@ -5,7 +5,8 @@ import torch
 from lightning.pytorch.callbacks import Callback
 
 class SampleCallback(Callback):
-    def __init__(self, input_dim, latent_dim, frequency=50, num_samples=16, output_dir="./samples", prompts=None):
+    def __init__(self, ema_callback, input_dim, latent_dim, frequency=50, num_samples=16, output_dir="./samples", prompts=None):
+        self.ema_callback = ema_callback # We want to sample from the EMA model as this will be much more stable than the online model
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.num_samples = num_samples
@@ -17,6 +18,7 @@ class SampleCallback(Callback):
         if (trainer.current_epoch + 1) % self.frequency == 0:
             # Sample from the model at the end of each epoch and log the samples to wandb
             pl_module.eval()
+            self.ema_callback._swap_models(pl_module) # Swap to the EMA model
 
             latent = torch.randn(self.num_samples**2, *self.latent_dim).to(device=pl_module.device)
             size = None
@@ -42,4 +44,5 @@ class SampleCallback(Callback):
                 os.makedirs(self.output_dir)
             samples.save(os.path.join(self.output_dir, f"epoch_{trainer.current_epoch}.png"))
 
+            self.ema_callback._swap_models(pl_module) # Swap back to the online model for training
             pl_module.train()

@@ -15,7 +15,7 @@ accumulate_grad_batches:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 50
+  value: 100
 
 gpus:
   description: The number of GPUs to use for training
@@ -25,7 +25,7 @@ gpus:
 repa_weight:
   description: The weight to give to the REPA loss
   type: float
-  value: 0.5
+  value: 0.05
 repa_layer:
   description: The layer of the REPA transformer to apply the REPA loss to (0-indexed)
   type: int
@@ -33,7 +33,7 @@ repa_layer:
 lr:
   description: The learning rate for training the model
   type: float
-  value: 0.0001
+  value: 0.00005
 ema_decay:
   description: The decay rate for the EMA weight averaging
   type: float

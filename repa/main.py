@@ -37,6 +37,9 @@ class EMAWeightAveraging(WeightAveraging):
         # Start after 100 steps.
         return (step_idx is not None) and (step_idx >= 100)
 
+def train(trainer, model, dataloader, ckpt_path): # Move this to a separate function for DDP
+    trainer.fit(model, dataloader, ckpt_path=ckpt_path)
+
 def main(args):
     with wandb.init(config=args.config, project="repa", id=args.wandb_id, resume="allow", group="DDP") as run:
         if run.config['dataset'] == "Combined":
@@ -83,7 +86,7 @@ def main(args):
 
         dataloader = data.DataLoader(
             dataset, batch_size=run.config['batchsize'], shuffle=True,
-            num_workers=8, pin_memory=True, prefetch_factor=32 # Higher prefetch factor to cope with our shitty HDD
+            num_workers=8, pin_memory=True, prefetch_factor=4 # Higher prefetch factor to cope with our shitty drives
         )
 
         # We are not training the autoencoder. This is far beyond our hardware capabilities
@@ -155,6 +158,7 @@ def main(args):
 
         logger = WandbLogger(project="repa", log_model=False, id=run.id)
 
+        ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         checkpoint_callback = ModelCheckpoint(
             dirpath=checkpoint_dir,
             monitor=None, # Loss is not a meaningful quantity to monitor for generative models
@@ -163,10 +167,10 @@ def main(args):
             save_last=True
             )
         sample_callback = SampleCallback(
+            ema_callback=ema_callback,
             input_dim=(input_channels, *input_dim), latent_dim=(latent_channels, *latent_dim),
             frequency=run.config['sample_frequency'], num_samples=8, output_dir=sample_dir, prompts=sample_prompts)
         lr_monitor = LearningRateMonitor(logging_interval='step')
-        ema_callback = EMAWeightAveraging(decay=run.config['ema_decay'])
         pb_callback = RichProgressBar(leave=True)
 
 
@@ -178,11 +182,12 @@ def main(args):
             devices=run.config['gpus'],
             accumulate_grad_batches=run.config['accumulate_grad_batches'],
             callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
-            reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
+            #reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 
-        trainer.fit(model, dataloader, ckpt_path=args.continue_from)
+        #trainer.fit(model, dataloader, ckpt_path=args.continue_from)
+        train(trainer, model, dataloader, ckpt_path=args.continue_from)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
