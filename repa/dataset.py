@@ -9,9 +9,10 @@ from io import BytesIO
 import torch
 
 import torchvision as tv
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 
 import datasets
+import webdataset as wds
 
 from rich.progress import Progress
 
@@ -118,6 +119,37 @@ class HFEmbeddingDataset(Dataset):
         #size = precalc['size']
 
         #return img_embeddings, repa_embeddings, prompt_embeddings, prompt_mask, size
+
+
+class PD12MFullDataset(IterableDataset):
+    def __init__(self, root_dir, transform=None, shuffle_buffer=None):
+
+        self.wds = wds.WebDataset(os.path.join(root_dir, "{00000..02256}.tar"))
+        if shuffle_buffer is not None:
+            self.wds = self.wds.shuffle(shuffle_buffer)
+        self.wds = self.wds.decode("pil")
+
+        self.transform = transform
+
+    def __len__(self):
+        # Annoyingly webdataset doesn't give us an easy way to get the length
+        return 12400094 # Maximum possible length based on the number of rows of the parquet metadata
+
+    def __iter__(self):
+        wds_iter = iter(self.wds)
+        for idx in range(len(self)):
+            item = next(wds_iter)
+            image = item["jpg"]
+            image = item["jpg"]
+            text = item["txt"]
+
+            h, w = image.size
+            size = torch.tensor([h, w]) / 256.0 # just to keep numbers small
+
+            if self.transform:
+                image = self.transform(image)
+
+            yield idx, image, text, size
 
 
 class CombinedDatasetWrapper(Dataset):

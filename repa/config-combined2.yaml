@@ -15,7 +15,7 @@ accumulate_grad_batches:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 100
+  value: 150
 
 gpus:
   description: The number of GPUs to use for training
