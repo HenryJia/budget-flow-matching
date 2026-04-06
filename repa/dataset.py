@@ -133,7 +133,7 @@ class PD12MFullDataset(IterableDataset):
 
     def __len__(self):
         # Annoyingly webdataset doesn't give us an easy way to get the length
-        return 1024 #12400094 # Maximum possible length based on the number of rows of the parquet metadata
+        return 12400094 # Maximum possible length based on the number of rows of the parquet metadata
 
     def __iter__(self):
         wds_iter = iter(self.wds)
