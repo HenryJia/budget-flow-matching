@@ -25,37 +25,21 @@ from model import PromptEncoderWrapper, ViTWrapper
 
 from rich.progress import Progress
 
-def save_embedding(idx, dcae_embedding, repa_embedding, prompt_embedding, prompt_mask, size, output_dir):
-    with lzma.open(os.path.join(output_dir, f"{idx}_precalc.pt.xz"), "wb", preset=9) as f:
-        torch.save({
-            'dcae_embedding': dcae_embedding,
-            'repa_embedding': repa_embedding,
-            'prompt_embedding': prompt_embedding,
-            'prompt_mask': prompt_mask,
-            'size': size,
-        }, f)
+def save_embedding(idxs, dcae_embedding, repa_embedding, prompt_embedding, prompt_mask, size, output_dir):
+    for i, idx in enumerate(idxs):
+        with lzma.open(os.path.join(output_dir, f"{idx}_precalc.pt.xz"), "wb", preset=9) as f:
+            torch.save({ # Note, filesizes explode if we don't make tensors contiguous
+                'dcae_embedding': dcae_embedding[i].cpu().contiguous(),
+                'repa_embedding': repa_embedding[i].cpu().contiguous(),
+                'prompt_embedding': prompt_embedding[i].cpu().contiguous(),
+                'prompt_mask': prompt_mask[i].cpu().contiguous(),
+                'size': size[i],
+            }, f)
 
-def lzma_thread(batch_queue, output_dir, gpu_done):
-    pool = mp.Pool(8) # Use multiprocessing to speed up the lzma compression, which is CPU bound
-
-    while not gpu_done.is_set() or not batch_queue.empty():
-        batch = batch_queue.get()
-        idxs, dcae_embedding, repa_embedding, prompt_embedding, prompt_mask, size = batch
-        # Unbatch and save the embeddings to disk as .pt files
-        pool.starmap(
-            save_embedding,
-            [(idxs[i].item(), dcae_embedding[i], repa_embedding[i], prompt_embedding[i], prompt_mask[i], size[i], output_dir) for i in range(len(idxs))]
-        )
-
-    pool.close()
-    pool.join()
 
 def gpu_thread(batch_queue, device, dcae, repa_model, prompt_encoder, output_dir, loader_done):
-    lzma_queue = Queue()
-    gpu_done = Event()
-    gpu_done.clear()
-    save_thread = Thread(target=lzma_thread, args=(lzma_queue, output_dir, gpu_done))
-    save_thread.start()
+
+    pool = mp.Pool(8) # Use multiprocessing to speed up the lzma compression, which is CPU bound
 
     while not loader_done.is_set() or not batch_queue.empty():
         batch = batch_queue.get()
@@ -71,10 +55,13 @@ def gpu_thread(batch_queue, device, dcae, repa_model, prompt_encoder, output_dir
             repa_embedding = torch.mean(repa_embedding, dim=1) # Take the mean over the spatial dimension to save memory
             prompt_embedding, prompt_mask = prompt_encoder(caption)
 
-            lzma_queue.put((idxs, dcae_embedding.cpu(), repa_embedding.cpu(), prompt_embedding.cpu(), prompt_mask.cpu(), size))
-    gpu_done.set()
-    save_thread.join()
+            pool.apply_async(
+                save_embedding, args=(idxs, dcae_embedding, repa_embedding, prompt_embedding, prompt_mask, size, output_dir),
+                error_callback=lambda e: print(f"Error in save_embedding: {e}")
+            )
 
+    pool.close()
+    pool.join()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
