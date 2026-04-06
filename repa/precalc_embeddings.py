@@ -32,10 +32,10 @@ def lzma_thread(batch_queue, output_dir, gpu_done):
         for i, idx in enumerate(idxs):
             with lzma.open(os.path.join(output_dir, f"{idx}_precalc.pt.xz"), "wb", preset=9) as f:
                 torch.save({
-                    'dcae_embedding': dcae_embedding[i].cpu(),
-                    'repa_embedding': repa_embedding[i].cpu(),
-                    'prompt_embedding': prompt_embedding[i].cpu(),
-                    'prompt_mask': prompt_mask[i].cpu(),
+                    'dcae_embedding': dcae_embedding[i],
+                    'repa_embedding': repa_embedding[i],
+                    'prompt_embedding': prompt_embedding[i],
+                    'prompt_mask': prompt_mask[i],
                     'size': size[i],
                 }, f)
 
@@ -60,7 +60,7 @@ def gpu_thread(batch_queue, device, dcae, repa_model, prompt_encoder, output_dir
             repa_embedding = torch.mean(repa_embedding, dim=1) # Take the mean over the spatial dimension to save memory
             prompt_embedding, prompt_mask = prompt_encoder(caption)
 
-            lzma_queue.put((idxs, dcae_embedding, repa_embedding, prompt_embedding, prompt_mask, size))
+            lzma_queue.put((idxs, dcae_embedding.cpu(), repa_embedding.cpu(), prompt_embedding.cpu(), prompt_mask.cpu(), size))
     gpu_done.set()
     save_thread.join()
 
