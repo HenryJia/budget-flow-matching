@@ -107,7 +107,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "pd12m-full":
         dataset = PD12MFullDataset(
-            root_dir='~/pd12m-full/webdataset', transform=tv.transforms.Compose([
+            root_dir='/home/henry/pd12m-full/webdataset', transform=tv.transforms.Compose([
                 tv.transforms.Resize(input_dim),
                 tv.transforms.ToTensor(),
                 tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
