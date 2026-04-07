@@ -1,19 +1,4 @@
-# Henry's Diffusion Classroom
-
-So, I previously worked at Midjourney, but decided to do a PhD in something completely different for 3 years. As such, I'm a little rusty these days.
-
-As always, a good way to polish off the rust and brush up on everything is to try and build stuff from scratch.
-
-So, this repository contains a set of well commented implementations, built to run reasonably efficiently whilst being as minimal as possible.
-
-Please feel free to use this repository as a reference for building your own diffusion models, or just to understand how they work. The code should be readable and well commented, so it should be easy to follow along.
-
-Do note that whilst the different implementations share various bits of code, they are all implemented independently to improve readability of each implementation. So, there will be a lot of code duplication.
-
-Acknowledgements: I want to give a shoutout to Sully, an old friend and former researcher at OpenAI, who got me started and gave me a list of papers to read and implement. I was also guided in what papers to read by the good people of the Eleuther.AI discord and the Yannic Kilcher discord.
-
-
-# Implementations
+# Other Implementations
 
 # High-Resolution Image Synthesis with Latent Diffusion Models
 ### Our code is in `ldm` [Link](https://github.com/HenryJia/diffusion-classroom/tree/main/ldm)
