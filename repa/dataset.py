@@ -124,7 +124,7 @@ class HFEmbeddingDataset(Dataset):
 class PD12MFullDataset(IterableDataset):
     def __init__(self, root_dir, transform=None, shuffle_buffer=None):
 
-        self.wds = wds.WebDataset(os.path.join(root_dir, "{00000..02256}.tar"))
+        self.wds = wds.WebDataset(os.path.join(root_dir, "{00000..02480}.tar"))
         if shuffle_buffer is not None:
             self.wds = self.wds.shuffle(shuffle_buffer)
         self.wds = self.wds.decode("pil")
@@ -138,7 +138,10 @@ class PD12MFullDataset(IterableDataset):
     def __iter__(self):
         wds_iter = iter(self.wds)
         for idx in range(len(self)):
-            item = next(wds_iter)
+            try:
+                item = next(wds_iter)
+            except StopIteration:
+                break # End of the dataset
             image = item["jpg"]
             image = item["jpg"]
             text = item["txt"]

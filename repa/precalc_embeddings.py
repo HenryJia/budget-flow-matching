@@ -107,7 +107,7 @@ if __name__ == "__main__":
         )
     elif args.dataset == "pd12m-full":
         dataset = PD12MFullDataset(
-            root_dir='/mnt/pd12m-full/webdataset', transform=tv.transforms.Compose([
+            root_dir='~/pd12m-full/webdataset', transform=tv.transforms.Compose([
                 tv.transforms.Resize(input_dim),
                 tv.transforms.ToTensor(),
                 tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
@@ -159,13 +159,17 @@ if __name__ == "__main__":
         threads.append(Thread(target=gpu_thread, args=(gpu_queue[i], d, dcae[i], repa_model[i], prompt_encoder[i], args.output_dir, loader_done)))
         threads[-1].start()
 
-    with Progress() as progress:
-        task = progress.add_task("[cyan]Precomputing embeddings...", total=len(dataloader))
-        for batch_idx, batch in enumerate(dataloader):
-            device_idx = batch_idx % len(devices)
-            gpu_queue[device_idx].put(batch)
+    try:
+        with Progress() as progress:
+            task = progress.add_task("[cyan]Precomputing embeddings...", total=len(dataloader))
+            for batch_idx, batch in enumerate(dataloader):
+                device_idx = batch_idx % len(devices)
+                gpu_queue[device_idx].put(batch)
 
-            progress.update(task, advance=1)
+                progress.update(task, advance=1)
+    except Exception as e:
+        print(f"Error occurred during data loading: {e}")
+        print("Signaling GPU threads to stop...")
 
     print("Almost done! Waiting for remaining threads to finish...")
     loader_done.set()
