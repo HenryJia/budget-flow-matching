@@ -74,3 +74,7 @@ Most of the scripts should be self explanatory, but the main ones are:
 ## Results
 
 Model is currently training still, results coming soon...
+
+## Extras
+
+There are some other implementations of seminal diffusion and flow matching papers in the `other_examples` folder. These include the original Flow Matching paper, the Nonequilibrium Thermodynamics paper, and the original Denoising Diffusion Probabilistic Models paper. These are all implemented in a simple way without much of the optimisations and engineering strategies above. I built them in the process of diving deeper into flow matching and diffusion models. They're still a bit of a mess, but I'll clean them up soon. They're not really meant to be used for training, but more for educational purposes and to play around with the code and understand the details of how these models work. They're all implemented in PyTorch Lightning as well for simplicity.
