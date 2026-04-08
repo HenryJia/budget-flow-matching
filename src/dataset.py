@@ -111,7 +111,7 @@ class EmbeddingDataset(Dataset):
 
     def __getitem__(self, idx):
         try:
-            with lzma.open(self.file_list[idx], "rb") as f:
+            with lzma.open(os.path.join(self.embedding_dir, self.file_list[idx]), "rb") as f:
                 precalc = torch.load(f)
             return precalc
         except Exception as e:

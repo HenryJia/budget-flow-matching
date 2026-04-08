@@ -200,10 +200,11 @@ class REPAModel(L.LightningModule):
 
         # Note: if we are using flash attention we need to ensure the model is on GPU before we run it to get the embedding for an empty prompt for classifier free guidance
         # A tad irritating but oh well
-        dev = self.prompt_encoder.encoder.device
-        self.prompt_encoder.cuda()
-        empty_prompt, empty_mask = self.prompt_encoder([""])
-        empty_prompt = empty_prompt.to(dev) # And restore it back to its original device
+        with torch.no_grad():
+            dev = self.prompt_encoder.encoder.device
+            self.prompt_encoder.cuda()
+            empty_prompt, empty_mask = self.prompt_encoder([""])
+            empty_prompt = empty_prompt.to(dev) # And restore it back to its original device
 
         self.register_buffer("empty_prompt", empty_prompt.to(dev))
         self.register_buffer("empty_mask", empty_mask.to(dev))
@@ -326,10 +327,7 @@ class REPAModel(L.LightningModule):
 
             prompt_embeddings, prompt_mask = self.prompt_encoder(prompts)
             prompt_embeddings = prompt_embeddings.to(dtype=self.dtype)
-            if len(prompt_embeddings.shape) == 2:
-                prompt_embeddings = prompt_embeddings[:, None, :]
-            if prompt_mask is not None:
-                prompt_mask = prompt_mask.to(dtype=self.dtype)
+            prompt_mask = prompt_mask.to(dtype=self.dtype)
 
             empty_prompt = self.empty_prompt.expand((prompt_embeddings.shape[0], -1, -1))
             empty_mask = self.empty_mask.expand((prompt_embeddings.shape[0], -1))
