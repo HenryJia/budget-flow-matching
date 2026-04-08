@@ -115,7 +115,8 @@ if __name__ == "__main__":
             prompt_dim=prompt_embedding_dim,
             repa_dim=384,
             repa_layer=run.config['repa_layer'],
-            repa_weight=run.config['repa_weight']
+            repa_weight=run.config['repa_weight'],
+            prompt_dropout=run.config['prompt_dropout']
         )
 
         print("Measuring FLOPs...")
@@ -129,15 +130,13 @@ if __name__ == "__main__":
         )
 
         print(f"Flow model FLOPs: {flops / 1e9:.2f} GFLOPs")
-        if run.config['dataset'] == "Combined":
-            #test_input = (torch.randn(1, input_channels, *input_dim).cuda(), ["test"], torch.ones((1, 2)).cuda())
-            test_input = {
-                'dcae_embedding': torch.randn(1, latent_channels, *latent_dim).cuda(),
-                'repa_embedding': torch.randn(1, 384).cuda(),
-                'prompt_embedding': torch.zeros((1, 128, prompt_embedding_dim - 2)).cuda(),
-                'prompt_mask': torch.zeros((1, 128), dtype=torch.bool).cuda(),
-                'size': torch.ones((1, 2)).cuda()
-            }
+        test_input = {
+            'dcae_embedding': torch.randn(1, latent_channels, *latent_dim).cuda(),
+            'repa_embedding': torch.randn(1, 384).cuda(),
+            'prompt_embedding': torch.zeros((1, 128, prompt_embedding_dim - 2)).cuda(),
+            'prompt_mask': torch.zeros((1, 128), dtype=torch.bool).cuda(),
+            'size': torch.ones((1, 2)).cuda()
+        }
         flops = measure_flops(
             model,
             lambda: model.flow(
@@ -162,7 +161,7 @@ if __name__ == "__main__":
             save_last=True
             )
         sample_callback = SampleCallback(
-            ema_callback=ema_callback,
+            ema_callback=ema_callback, cfg_scale=run.config['cfg_scale'],
             input_dim=(input_channels, *input_dim), latent_dim=(latent_channels, *latent_dim),
             frequency=run.config['sample_frequency'], num_samples=8, output_dir=sample_dir, prompts=sample_prompts)
         lr_monitor = LearningRateMonitor(logging_interval='step')

@@ -5,8 +5,9 @@ import torch
 from lightning.pytorch.callbacks import Callback
 
 class SampleCallback(Callback):
-    def __init__(self, ema_callback, input_dim, latent_dim, frequency=50, num_samples=16, output_dir="./samples", prompts=None):
+    def __init__(self, ema_callback, cfg_scale, input_dim, latent_dim, frequency=50, num_samples=16, output_dir="./samples", prompts=None):
         self.ema_callback = ema_callback # We want to sample from the EMA model as this will be much more stable than the online model
+        self.cfg_scale = cfg_scale
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.num_samples = num_samples
@@ -29,7 +30,7 @@ class SampleCallback(Callback):
                 size = size.expand((self.num_samples**2, 2))
                 prompts = self.prompts
 
-            samples = pl_module(latent, prompts=prompts, size=size)
+            samples = pl_module(latent, prompts=prompts, size=size, cfg_scale=self.cfg_scale)
             samples = (samples + 1.0) / 2.0 # Rescale from [-1, 1] to [0, 1]
             samples = (samples * 255).clamp(0, 255).byte()
 
