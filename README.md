@@ -69,7 +69,7 @@ To fully utilise the limited resources and so it doesn't take 6 months to train 
 
 Most of the scripts should be self explanatory, but the main ones are:
 
-- `precalculate_embeddings.py`: This script precalculates all the VAE latents, REPA embeddings and text embeddings. It then saves them to disk with xz compression
+- `precalc_embeddings.py`: This script precalculates all the VAE latents, REPA embeddings and text embeddings. It then saves them to disk with xz compression
 
 - `main.py`: This is the main training script. It loads the precalculated embeddings from disk, and trains our model using a yaml config for hyperparameters. Note that hyperparameters aren't saved with the model checkpoints, because we may want to twiddle and change them whilst we train, and if they're part of model checkpoints, then that becomes much harder
 
