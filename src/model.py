@@ -280,9 +280,6 @@ class REPAModel(L.LightningModule):
             prompt_embeddings = batch['prompt_embedding'].to(dtype=self.dtype)
             prompt_mask = batch['prompt_mask']
 
-            size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
-            prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
-
             empty_prompt = self.empty_prompt.expand((prompt_embeddings.shape[0], -1, -1))
             empty_mask = self.empty_mask.expand((prompt_embeddings.shape[0], -1))
 
@@ -290,6 +287,9 @@ class REPAModel(L.LightningModule):
 
             prompt_embeddings = torch.where(prompt_dropout, empty_prompt, prompt_embeddings)
             prompt_mask = torch.where(prompt_dropout.squeeze(), empty_mask, prompt_mask)
+
+            size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
+            prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
 
         velocity, repa_state = self.flow(x_t, t, prompt_embeddings, prompt_mask, return_repa=True)
 
