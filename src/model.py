@@ -183,8 +183,9 @@ class PromptEncoderWrapper(nn.Module):
 class REPAModel(L.LightningModule):
     def __init__(
             self, latent_dim, latent_channels, autoencoder,
-            lr, prompt_encoder=None, prompt_dim=768,
+            lr, prompt_encoder, prompt_dim=768,
             repa_dim=256, repa_layer=7, repa_weight=0.5,
+            prompt_dropout=0.1
             ):
         super(REPAModel, self).__init__()
         # Note: This is going to be a bit different to the reference theano implementation
@@ -195,6 +196,11 @@ class REPAModel(L.LightningModule):
         self.prompt_encoder = prompt_encoder
         self.prompt_dim = prompt_dim
         self.repa_weight = repa_weight
+        self.prompt_dropout = prompt_dropout
+        empty_prompt, empty_mask = self.prompt_encoder([""])
+
+        self.register_buffer("empty_prompt", empty_prompt)
+        self.register_buffer("empty_mask", empty_mask)
 
         # Load Sana 600M config
         config = SanaTransformer2DModel.load_config(
@@ -265,15 +271,15 @@ class REPAModel(L.LightningModule):
             x_t = x_t.to(dtype=self.dtype)
             t = t.to(dtype=self.dtype)
 
-            if self.prompt_encoder is not None:
-                prompt_embeddings = batch['prompt_embedding'].to(dtype=self.dtype)
-                prompt_mask = batch['prompt_mask']
+            prompt_embeddings = batch['prompt_embedding'].to(dtype=self.dtype)
+            prompt_mask = batch['prompt_mask']
 
-                size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
-                prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
-            else:
-                prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
-                prompt_mask = None
+            size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
+            prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
+
+            prompt_dropout = torch.rand(size=(prompt_embeddings.shape[0], 1, 1), device=prompt_embeddings.device) < self.prompt_dropout
+            prompt_embeddings = torch.where(prompt_dropout, self.empty_prompt, prompt_embeddings)
+            prompt_mask = torch.where(prompt_dropout.squeeze(), self.empty_mask, prompt_mask)
 
         velocity, repa_state = self.flow(x_t, t, prompt_embeddings, prompt_mask, return_repa=True)
 
@@ -301,7 +307,7 @@ class REPAModel(L.LightningModule):
             self.prompt_encoder.eval()
         self.autoencoder.eval()
 
-    def forward(self, x, prompts=None, size=None, steps=1):
+    def forward(self, x, prompts=None, size=None, steps=1, cfg_scale=1.0):
         # Note: This is technically the reverse diffusion process for sampling the whole trajectory
         # But, PyTorch/Lightning convention means we have to call it forward
 
@@ -315,6 +321,8 @@ class REPAModel(L.LightningModule):
                     prompt_embeddings = prompt_embeddings[:, None, :]
                 if prompt_mask is not None:
                     prompt_mask = prompt_mask.to(dtype=self.dtype)
+
+                prompt_dropout = torch.rand(size=(prompt_embeddings.shape[0],), device=prompt_embeddings.device) < self.prompt_dropout
             else:
                 prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
                 prompt_mask = None
@@ -328,7 +336,11 @@ class REPAModel(L.LightningModule):
             # I honestly, do not entirely see the point of this. Maybe it gives better sample quality, but we want speed and simplicity
             t = torch.linspace(0, 1, steps=steps + 1, device=x.device)
 
-            ode = lambda t, x: self.flow(x, t.expand((x.shape[0],)), prompt_embeddings, prompt_mask, return_repa=False)
+            def ode(t, x):
+                v = self.flow(x, t.expand((x.shape[0],)), self.empty_prompt, self.empty_mask, return_repa=False)
+                v_cond = self.flow(x, t.expand((x.shape[0],)), prompt_embeddings, prompt_mask, return_repa=False)
+                return v + cfg_scale * (v_cond - v)
+
             trajectory = odeint(ode, x_0, t, atol=1e-5, rtol=1e-3, method='dopri5')
 
             # Again, note that Huggingface's diffusers library does not apply the scaling factor for us

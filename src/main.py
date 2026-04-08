@@ -21,7 +21,7 @@ from diffusers import AutoencoderDC
 from transformers import AutoTokenizer, AutoImageProcessor, AutoModel
 from sentence_transformers import SentenceTransformer
 
-from dataset import HFEmbeddingDataset, CombinedDatasetWrapper
+from dataset import EmbeddingDataset, CombinedDatasetWrapper
 
 from model import REPAModel, PromptEncoderWrapper, ViTWrapper
 from callbacks import SampleCallback
@@ -48,47 +48,36 @@ if __name__ == "__main__":
 
 
     with wandb.init(config=args.config, project="repa", id=args.wandb_id, resume="allow", group="DDP") as run:
-        if run.config['dataset'] == "Combined":
-            input_dim = (256, 256)
-            input_channels = 3
-            latent_dim = (8, 8)
-            latent_channels = 32
-    
-            # nyuuzyou/publicdomainpictures is relatively high quality but it is smaller (600k)
-            nyuuzyou = HFEmbeddingDataset(
-                dataset_name="nyuuzyou/publicdomainpictures", embedding_dir='../publicdomain_imgs', split="train"
-            )
+        input_dim = (256, 256)
+        input_channels = 3
+        latent_dim = (8, 8)
+        latent_channels = 32
 
-            # Use a version of COCO that's been helpfully preprocessed by someone else on Huggingface
-            coco = HFEmbeddingDataset(
-                dataset_name="jxie/coco_captions", embedding_dir='../coco', split="train"
-            )            
+        checkpoint_dir = "./checkpoints_" + run.config['name']
+        sample_dir = "./samples_" + run.config['name']
 
-            # SBU Captions dataset is supposed to be 1M images from Flickr with real captions. We only managed to get 850k of them because the rest were missing
-            # We'll use a version on Huggingface that's been helpfully preprocessed
-            sbu = HFEmbeddingDataset(
-                dataset_name="eaglewatch/sbucaptions", embedding_dir='../SBU_Captions', split="train"
-            )
+        datasets = []
+        for dataset in run.config['dataset'].split(","):
+            dataset = dataset.strip()
+            datasets.append(EmbeddingDataset(embedding_dir=dataset))
 
-            dataset = CombinedDatasetWrapper([nyuuzyou, coco, sbu])
-
-            checkpoint_dir = "./checkpoints_combined"
-            sample_dir = "./samples_combined"
-
-            prompt_encoder = PromptEncoderWrapper(
-                encoder=AutoModel.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
-                tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
-            )
-
-            # plus 2 so our model knows the height and width of the image
-            prompt_embedding_dim = prompt_encoder.encoder.config.hidden_size + 2 
-
-            prompt_encoder = prompt_encoder.eval()
-            prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
-
-            sample_prompts = pd.read_csv("./sample-prompts.csv")["Description"].tolist()
+        if len(datasets) > 1:
+            dataset = CombinedDatasetWrapper(datasets)
         else:
-            raise ValueError(f"Unknown dataset: {run.config['dataset']}")
+            dataset = datasets[0]
+
+        prompt_encoder = PromptEncoderWrapper(
+            encoder=AutoModel.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+            tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+        )
+
+        # plus 2 so our model knows the height and width of the image
+        prompt_embedding_dim = prompt_encoder.encoder.config.hidden_size + 2 
+
+        prompt_encoder = prompt_encoder.eval()
+        prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
+
+        sample_prompts = pd.read_csv("./sample-prompts.csv")["Description"].tolist()
 
         dataloader = data.DataLoader(
             dataset, batch_size=run.config['batchsize'], shuffle=True,

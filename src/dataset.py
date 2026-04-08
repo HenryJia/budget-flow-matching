@@ -2,6 +2,8 @@ import os
 import time
 import requests
 import warnings
+import lzma
+import re
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from io import BytesIO
@@ -95,30 +97,26 @@ class HFDataset(Dataset):
         return idx, image, item[self.text_key], size
 
 
-# Like the HF dataset we have above, but with precomputed embeddings
-class HFEmbeddingDataset(Dataset):
-    def __init__(self, dataset_name, embedding_dir, split="train"):
-        self.dataset_hf = datasets.load_dataset(dataset_name, split=split)
+class EmbeddingDataset(Dataset):
+    def __init__(self, embedding_dir):
         self.embedding_dir = embedding_dir
 
+        filter_pattern = re.compile(r"(\d+)_precalc\.pt.xz")
+
+        self.file_list = os.listdir(self.embedding_dir)
+        self.file_list = [f for f in self.file_list if filter_pattern.match(f)]
+
     def __len__(self):
-        return len(self.dataset_hf)
+        return len(self.file_list)
 
     def __getitem__(self, idx):
-        if os.path.exists(os.path.join(self.embedding_dir, f"{idx}_precalc.pt")):
-            precalc = torch.load(os.path.join(self.embedding_dir, f"{idx}_precalc.pt"))
+        try:
+            with lzma.open(self.file_list[idx], "rb") as f:
+                precalc = torch.load(f)
             return precalc
-        else:
-            warnings.warn(f"Precomputed embeddings for item {idx} not found in {self.embedding_dir}. Getting the next item instead.", ResourceWarning)
-            return self.__getitem__((idx + 1) % len(self.dataset_hf))
-
-        #img_embeddings = precalc['dcae_embedding']
-        #repa_embeddings = precalc['repa_embedding']
-        #prompt_embeddings = precalc['prompt_embedding']
-        #prompt_mask = precalc['prompt_mask']
-        #size = precalc['size']
-
-        #return img_embeddings, repa_embeddings, prompt_embeddings, prompt_mask, size
+        except Exception as e:
+            warnings.warn(f"Failed to load embedding {idx} from {self.file_list[idx]}, error: {e}. Skipping and loading the next one instead")
+            return self.__getitem__((idx + 1) % len(self.file_list))
 
 
 class PD12MFullDataset(IterableDataset):

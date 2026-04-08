@@ -1,7 +1,12 @@
+name:
+  description: The name of the run, used saving checkpoints and samples locally
+  type: str
+  value: "pd12m"
+
 dataset:
   description: The dataset to use for training
   type: str
-  value: "Combined"
+  value: "../pd12m"
 
 batchsize:
   description: The batch size to use for the dataloader
@@ -15,7 +20,7 @@ accumulate_grad_batches:
 epochs:
   description: The number of epochs to train the model for
   type: int
-  value: 50
+  value: 5
 
 gpus:
   description: The number of GPUs to use for training
@@ -30,6 +35,16 @@ repa_layer:
   description: The layer of the REPA transformer to apply the REPA loss to (0-indexed)
   type: int
   value: 7
+
+prompt_dropout:
+  description: The dropout rate to apply to the prompt embeddings during training. Used for training for classifier free guidance
+  type: float
+  value: 0.1
+cfg_scale:
+  description: The scale to apply to the classifier free guidance during sampling. High = more prompt adherence, but may mess with the model if too high
+  type: float
+  value: 4 # Note, the REPA paper used values from 1.3 all the way to 4 depending on what they were generating
+
 lr:
   description: The learning rate for training the model
   type: float
