@@ -332,9 +332,9 @@ class REPAModel(L.LightningModule):
             empty_prompt = self.empty_prompt.expand((prompt_embeddings.shape[0], -1, -1))
             empty_mask = self.empty_mask.expand((prompt_embeddings.shape[0], -1))
 
-            if size is not None:
-                size = size[:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
-                prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1)
+            size = size[:, None, :].expand((-1, prompt_embeddings.shape[1], -1)).to(dtype=self.dtype)
+            prompt_embeddings = torch.cat([prompt_embeddings, size], dim=-1)
+            empty_prompt = torch.cat([empty_prompt, size], dim=-1)
 
             # Note: The actual REPA paper actually uses a more sophisticated SDE solver
             # To do this, they had to make their own SDE solver, and convert the flow model from an ODE to SDE
