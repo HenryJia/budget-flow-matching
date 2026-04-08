@@ -197,10 +197,16 @@ class REPAModel(L.LightningModule):
         self.prompt_dim = prompt_dim
         self.repa_weight = repa_weight
         self.prompt_dropout = prompt_dropout
-        empty_prompt, empty_mask = self.prompt_encoder([""])
 
-        self.register_buffer("empty_prompt", empty_prompt)
-        self.register_buffer("empty_mask", empty_mask)
+        # Note: if we are using flash attention we need to ensure the model is on GPU before we run it to get the embedding for an empty prompt for classifier free guidance
+        # A tad irritating but oh well
+        dev = self.prompt_encoder.device
+        self.prompt_encoder.cuda()
+        empty_prompt, empty_mask = self.prompt_encoder([""])
+        empty_prompt = empty_prompt.to(dev) # And restore it back to its original device
+
+        self.register_buffer("empty_prompt", empty_prompt.to(dev))
+        self.register_buffer("empty_mask", empty_mask.to(dev))
 
         # Load Sana 600M config
         config = SanaTransformer2DModel.load_config(
@@ -277,9 +283,13 @@ class REPAModel(L.LightningModule):
             size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
             prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
 
+            enmpty_prompt = self.empty_prompt.expand((prompt_embeddings.shape[0], -1, -1))
+            empty_mask = self.empty_mask.expand((prompt_embeddings.shape[0], -1))
+
             prompt_dropout = torch.rand(size=(prompt_embeddings.shape[0], 1, 1), device=prompt_embeddings.device) < self.prompt_dropout
-            prompt_embeddings = torch.where(prompt_dropout, self.empty_prompt, prompt_embeddings)
-            prompt_mask = torch.where(prompt_dropout.squeeze(), self.empty_mask, prompt_mask)
+
+            prompt_embeddings = torch.where(prompt_dropout, empty_prompt, prompt_embeddings)
+            prompt_mask = torch.where(prompt_dropout.squeeze(), empty_mask, prompt_mask)
 
         velocity, repa_state = self.flow(x_t, t, prompt_embeddings, prompt_mask, return_repa=True)
 
@@ -314,18 +324,15 @@ class REPAModel(L.LightningModule):
         with torch.no_grad():
             x_0 = torch.randn_like(x)
 
-            if prompts is not None:
-                prompt_embeddings, prompt_mask = self.prompt_encoder(prompts)
-                prompt_embeddings = prompt_embeddings.to(dtype=self.dtype)
-                if len(prompt_embeddings.shape) == 2:
-                    prompt_embeddings = prompt_embeddings[:, None, :]
-                if prompt_mask is not None:
-                    prompt_mask = prompt_mask.to(dtype=self.dtype)
+            prompt_embeddings, prompt_mask = self.prompt_encoder(prompts)
+            prompt_embeddings = prompt_embeddings.to(dtype=self.dtype)
+            if len(prompt_embeddings.shape) == 2:
+                prompt_embeddings = prompt_embeddings[:, None, :]
+            if prompt_mask is not None:
+                prompt_mask = prompt_mask.to(dtype=self.dtype)
 
-                prompt_dropout = torch.rand(size=(prompt_embeddings.shape[0],), device=prompt_embeddings.device) < self.prompt_dropout
-            else:
-                prompt_embeddings = torch.zeros((x.shape[0], 1, self.prompt_dim), device=x.device)
-                prompt_mask = None
+            empty_prompt = self.empty_prompt.expand((prompt_embeddings.shape[0], -1, -1))
+            empty_mask = self.empty_mask.expand((prompt_embeddings.shape[0], -1))
 
             if size is not None:
                 size = size[:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
@@ -337,7 +344,7 @@ class REPAModel(L.LightningModule):
             t = torch.linspace(0, 1, steps=steps + 1, device=x.device)
 
             def ode(t, x):
-                v = self.flow(x, t.expand((x.shape[0],)), self.empty_prompt, self.empty_mask, return_repa=False)
+                v = self.flow(x, t.expand((x.shape[0],)), empty_prompt, empty_mask, return_repa=False)
                 v_cond = self.flow(x, t.expand((x.shape[0],)), prompt_embeddings, prompt_mask, return_repa=False)
                 return v + cfg_scale * (v_cond - v)
 
