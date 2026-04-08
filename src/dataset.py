@@ -107,7 +107,7 @@ class EmbeddingDataset(Dataset):
         self.file_list = [f for f in self.file_list if filter_pattern.match(f)]
 
     def __len__(self):
-        return 4096 #len(self.file_list)
+        return len(self.file_list)
 
     def __getitem__(self, idx):
         try:

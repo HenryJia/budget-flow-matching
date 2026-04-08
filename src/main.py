@@ -39,6 +39,8 @@ class EMAWeightAveraging(WeightAveraging):
 
 
 if __name__ == "__main__":
+    pl.seed_everything(1209)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="Path to the config file")
     parser.add_argument("--continue_from", type=str, default=None, help="Path to a checkpoint to continue training from")
