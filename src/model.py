@@ -287,7 +287,7 @@ class REPAModel(L.LightningModule):
             prompt_dropout = torch.rand(size=(prompt_embeddings.shape[0], 1, 1), device=prompt_embeddings.device) < self.prompt_dropout
 
             prompt_embeddings = torch.where(prompt_dropout, empty_prompt, prompt_embeddings)
-            prompt_mask = torch.where(prompt_dropout.squeeze(), empty_mask, prompt_mask)
+            prompt_mask = torch.where(prompt_dropout.squeeze(2), empty_mask, prompt_mask)
 
             size = batch['size'][:, None, :].expand((-1, prompt_embeddings.shape[1], -1))
             prompt_embeddings = torch.cat([prompt_embeddings, size.to(dtype=self.dtype)], dim=-1).detach()
