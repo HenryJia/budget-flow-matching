@@ -18,7 +18,7 @@ This is assuming you can even get a hold of 8 H100 GPUs. Most of the time, they'
 
 In this repository, I demonstrate an alternate, suboptimal but still viable strategy.
 
-Instead of using datacentre GPUs, we train on second hand consumer grade hardware. In particular, I use 2x RTX 3090 GPUs, which cost around 800 GBP (1000 USD) each at time of purchase. The full rig costs around 2000 GBP (2500 USD) including the rest of the components. The full neofetch output is included below
+Instead of using datacentre GPUs, we train on second hand consumer grade hardware whilst pulling every engineering trick we can. In particular, I use 2x RTX 3090 GPUs, which cost around 800 GBP (1000 USD) each at time of purchase. The full rig costs around 2000 GBP (2500 USD) including the rest of the components. The full neofetch output is included below
 
 ```
 henry@mainstay ~ % neofetch

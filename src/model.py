@@ -258,8 +258,6 @@ class REPAModel(L.LightningModule):
 
 
     def training_step(self, batch, batch_idx):
-        # The autoencoder in the forward diffusion process is not trained
-        # It is also ungodly expensive, so we really don't want PyTorch to be tracking gradients through it
         with torch.no_grad():
             x_1 = batch['dcae_embedding'].to(dtype=self.dtype) # Precomputed DCAE embeddings are already scaled by the scaling factor
 
