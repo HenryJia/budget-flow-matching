@@ -16,6 +16,8 @@ pandas = "*"
 torch = {version = "==2.10.0+cu130", index = "pytorch-cu130"}
 torchvision = {version = "*", index = "pytorch-cu130"}
 lightning = "*"
+torchmetrics = "*"
+torch-fidelity = "*"
 wandb = "*"
 gdown = "*"
 rich = "*"

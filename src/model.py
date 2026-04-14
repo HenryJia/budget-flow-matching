@@ -12,6 +12,7 @@ from diffusers import SanaTransformer2DModel
 from diffusers.utils import apply_lora_scale
 
 from torchdiffeq import odeint
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 class REPATransformer2DModel(SanaTransformer2DModel):
     def __init__(self, repa_dim, repa_layer, num_attention_heads, attention_head_dim, *args, **kwargs):
@@ -191,6 +192,8 @@ class REPAModel(L.LightningModule):
         # Note: This is going to be a bit different to the reference theano implementation
         # The reference implementation does a fair bit of more complicated stuff which I think is a tad esoteric
 
+        self.latent_dim = latent_dim
+        self.latent_channels = latent_channels
         self.autoencoder = autoencoder
         self.lr = lr
         self.prompt_encoder = prompt_encoder
@@ -243,6 +246,9 @@ class REPAModel(L.LightningModule):
         #self.flow_net = REPATransformer2DModel.from_config(config)
         self.flow_net = REPATransformer2DModel(repa_dim=repa_dim, repa_layer=repa_layer, **config)
 
+        self.fid_metric = FrechetInceptionDistance(
+            feature=2048, input_img_size=(3, self.latent_dim[0] * 32, self.latent_dim[1] * 32),
+            normalize=True, compute_on_cpu=False, sync_on_compute=True, dist_sync_on_step=True).to(self.device)
 
     def flow(self, latent_t, t, prompt_embeddings, prompt_mask, return_repa=False):
         out, repa_state = self.flow_net(
@@ -353,12 +359,33 @@ class REPAModel(L.LightningModule):
             out = self.autoencoder.decode(latent.to(dtype=self.autoencoder.dtype)).sample
         return out
 
+    def on_validation_epoch_start(self):
+        with torch.no_grad():
+            self.fid_metric.reset()
+
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            idxs, images, captions, size = batch
+
+            x = torch.randn((images.shape[0], self.latent_channels, *self.latent_dim), device=self.device, dtype=self.dtype)
+
+            generated = self.forward(x, prompts=captions, size=size, cfg_scale=1.0)
+
+            generated = (generated + 1.0) / 2.0 # Rescale from [-1, 1] to [0, 1]
+            images = (images + 1.0) / 2.0
+
+            self.fid_metric.update(generated, real=False)
+            self.fid_metric.update(images, real=True)
+
+    def on_validation_epoch_end(self):
+        with torch.no_grad():
+            fid = self.fid_metric.compute()
+            self.log("COCO Validation FID", fid, prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
         # Just use Adam and call it a day
         optimizer = torch.optim.Adam(self.flow_net.parameters(), lr=self.lr)
         return optimizer
-
 
     # Note, we often want to pause and continue training with different learning rates
     # But lightning's checkpointing keeps overwriting our new learning rates with the old ones

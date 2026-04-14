@@ -21,7 +21,7 @@ from diffusers import AutoencoderDC
 from transformers import AutoTokenizer, AutoImageProcessor, AutoModel
 from sentence_transformers import SentenceTransformer
 
-from dataset import EmbeddingDataset, CombinedDatasetWrapper
+from dataset import HFDataset, EmbeddingDataset, CombinedDatasetWrapper
 
 from model import REPAModel, PromptEncoderWrapper, ViTWrapper
 from callbacks import SampleCallback
@@ -85,6 +85,24 @@ if __name__ == "__main__":
             dataset, batch_size=run.config['batchsize'], shuffle=True,
             num_workers=8, pin_memory=True, prefetch_factor=4 # Higher prefetch factor to cope with our shitty drives
         )
+
+        val_dataset = HFDataset(
+            dataset_name="jxie/coco_captions", img_key="image", text_key="caption",
+            split="validation", img_dir='~/coco', transform=tv.transforms.Compose([
+                tv.transforms.Resize(input_dim),
+                tv.transforms.ToTensor(),
+                tv.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # Rescale from [0, 1] to [-1, 1]
+        )
+
+        # jxie's validation set for coco is actually a bit large for us. Running the full generative pipeline isn't fast
+        # Take a random subset
+        val_dataset, _ = data.random_split(val_dataset, (10000, len(val_dataset) - 10000))
+
+        val_dataloader = data.DataLoader(
+            val_dataset, batch_size=run.config['batchsize'], shuffle=False,
+            num_workers=8, pin_memory=True, prefetch_factor=4
+        )
+
 
         # We are not training the autoencoder. This is far beyond our hardware capabilities
         # We'll use the Deep Compression Autoencoder from Huggingface Diffusers. We'll use the sana variant.
@@ -182,4 +200,4 @@ if __name__ == "__main__":
             strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 
-        trainer.fit(model, dataloader, ckpt_path=args.continue_from)
+        trainer.fit(model, dataloader, val_dataloaders=val_dataloader, ckpt_path=args.continue_from)
