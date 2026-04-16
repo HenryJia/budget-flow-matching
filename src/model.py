@@ -1,3 +1,4 @@
+import gc
 import torch
 import math
 import torch.nn as nn
@@ -23,11 +24,11 @@ class REPATransformer2DModel(SanaTransformer2DModel):
 
         inner_dim = num_attention_heads * attention_head_dim
 
-        self.repa_attn = nn.MultiheadAttention(embed_dim=inner_dim, num_heads=8, batch_first=True)
+        self.repa_attn = nn.MultiheadAttention(embed_dim=inner_dim, num_heads=4, batch_first=True)
         self.repa_projection = nn.Sequential(
-            nn.Linear(inner_dim, self.repa_dim * 4),
+            nn.Linear(inner_dim, self.repa_dim * 2),
             nn.SiLU(),
-            nn.Linear(self.repa_dim * 4, self.repa_dim)
+            nn.Linear(self.repa_dim * 2, self.repa_dim)
         )
 
     # This is just copied from the original forward, but we need to output the REPA hidden states
@@ -210,9 +211,11 @@ class REPAModel(L.LightningModule):
         # A tad irritating but oh well
         with torch.no_grad():
             dev = self.prompt_encoder.encoder.device
-            self.prompt_encoder.cuda()
+            self.prompt_encoder = self.prompt_encoder.cuda()
             empty_prompt, empty_mask = self.prompt_encoder([""])
-            empty_prompt = empty_prompt.to(dev) # And restore it back to its original device
+            empty_prompt = empty_prompt.to(dev)
+            empty_mask = empty_mask.to(dev)
+            self.prompt_encoder = self.prompt_encoder.to(dev)
 
         self.register_buffer("empty_prompt", empty_prompt.to(dev))
         self.register_buffer("empty_mask", empty_mask.to(dev))
@@ -227,12 +230,12 @@ class REPAModel(L.LightningModule):
         #config["num_layers"] = 20
 
         # Reduce width
-        config["num_attention_heads"] = 24
-        config["attention_head_dim"] = 48
+        config["num_attention_heads"] = 28
+        config["attention_head_dim"] = 32
 
-        config["cross_attention_dim"] = 1152
-        config["num_cross_attention_heads"] = 24
-        config["cross_attention_head_dim"] = 48
+        config["cross_attention_dim"] = 896
+        config["num_cross_attention_heads"] = 16
+        config["cross_attention_head_dim"] = 32
 
         config["caption_channels"] = prompt_dim
 
@@ -251,6 +254,7 @@ class REPAModel(L.LightningModule):
 
         #self.flow_net = REPATransformer2DModel.from_config(config)
         self.flow_net = REPATransformer2DModel(repa_dim=repa_dim, repa_layer=repa_layer, **config)
+        self.flow_net.set_attention_backend("flash") # Use FlashAttention 2
 
         self.fid_metric = FrechetInceptionDistance(
             feature=2048, input_img_size=(3, self.latent_dim[0] * 32, self.latent_dim[1] * 32),
@@ -267,7 +271,6 @@ class REPAModel(L.LightningModule):
             return out, repa_state
         else:
             return out
-
 
     def training_step(self, batch, batch_idx):
         with torch.no_grad():
@@ -387,6 +390,8 @@ class REPAModel(L.LightningModule):
         with torch.no_grad():
             fid = self.fid_metric.compute()
             self.log("COCO Validation FID", fid, prog_bar=True, sync_dist=True)
+
+            self.fid_metric.reset()
 
     def configure_optimizers(self):
         # Just use Adam and call it a day

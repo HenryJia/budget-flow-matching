@@ -77,7 +77,7 @@ if __name__ == "__main__":
         prompt_embedding_dim = prompt_encoder.encoder.config.hidden_size + 2 
 
         prompt_encoder = prompt_encoder.eval()
-        prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
+        #prompt_encoder = torch.compile(prompt_encoder, "max-autotune")
 
         sample_prompts = pd.read_csv("./sample-prompts.csv")["Description"].tolist()
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         val_dataset, _ = data.random_split(val_dataset, (10000, len(val_dataset) - 10000))
 
         val_dataloader = data.DataLoader(
-            val_dataset, batch_size=run.config['batchsize'], shuffle=False,
+            val_dataset, batch_size=run.config['batchsize'] // 2, shuffle=False,
             num_workers=8, pin_memory=True, prefetch_factor=4
         )
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
             torch_dtype=torch.float16 # True fp16 models are available for this
         )
         dcae = dcae.eval()
-        dcae.compile(options={"max-autotune" : True})
+        #dcae.compile(options={"max-autotune" : True})
 
         # For the Representation Alignment, use DINOv2-small. It's a small model, but it should be enough to help us train
         # We do also need it to be light and fast, as we'll be running it at every step of the training loop
@@ -145,8 +145,8 @@ if __name__ == "__main__":
             model,
             lambda: model.flow(
                 torch.randn(1, latent_channels, *latent_dim).cuda(), t=torch.tensor([0]).cuda(),
-                prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim)).cuda(),
-                prompt_mask=None)
+                prompt_embeddings=torch.zeros((1, 128, prompt_embedding_dim)).cuda(),
+                prompt_mask=torch.ones((1, 128), dtype=torch.bool).cuda(), return_repa=True),
         )
 
         print(f"Flow model FLOPs: {flops / 1e9:.2f} GFLOPs")
@@ -154,15 +154,15 @@ if __name__ == "__main__":
             'dcae_embedding': torch.randn(1, latent_channels, *latent_dim).cuda(),
             'repa_embedding': torch.randn(1, 384).cuda(),
             'prompt_embedding': torch.zeros((1, 128, prompt_embedding_dim - 2)).cuda(),
-            'prompt_mask': torch.zeros((1, 128), dtype=torch.bool).cuda(),
+            'prompt_mask': torch.ones((1, 128), dtype=torch.bool).cuda(),
             'size': torch.ones((1, 2)).cuda()
         }
         flops = measure_flops(
             model,
             lambda: model.flow(
                 torch.randn(1, latent_channels, *latent_dim).cuda(), t=torch.tensor([0]).cuda(),
-                prompt_embeddings=torch.zeros((1, 1, prompt_embedding_dim), device=model.device).cuda(),
-                prompt_mask=None),
+                prompt_embeddings=torch.zeros((1, 128, prompt_embedding_dim), device=model.device).cuda(),
+                prompt_mask=torch.ones((1, 128), dtype=torch.bool).cuda(), return_repa=True),
             lambda _: model.training_step(test_input, 0)
         )
         model = model.cpu()

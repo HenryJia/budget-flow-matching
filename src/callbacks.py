@@ -1,4 +1,5 @@
 import os
+from itertools import batched
 from PIL import Image
 import torch
 
@@ -21,13 +22,16 @@ class SampleCallback(Callback):
             pl_module.eval()
             self.ema_callback._swap_models(pl_module) # Swap to the EMA model
 
-            latent = torch.randn(self.num_samples**2, *self.latent_dim).to(device=pl_module.device)
+            samples = []
+            for p in batched(self.prompts, 16):
+                latent = torch.randn(len(p), *self.latent_dim).to(device=pl_module.device)
+                size = torch.tensor(self.input_dim[1:], device=pl_module.device)[None, :] / 256.0
+                size = size.expand((len(p), 2))
 
-            #size = torch.ones((self.num_samples**2, 2), device=pl_module.device)
-            size = torch.tensor(self.input_dim[1:], device=pl_module.device)[None, :] / 256.0
-            size = size.expand((self.num_samples**2, 2))
+                sample = pl_module(latent, prompts=p, size=size, cfg_scale=self.cfg_scale)
+                samples.append(sample)
+            samples = torch.cat(samples, dim=0)
 
-            samples = pl_module(latent, prompts=self.prompts, size=size, cfg_scale=self.cfg_scale)
             samples = (samples + 1.0) / 2.0 # Rescale from [-1, 1] to [0, 1]
             samples = (samples * 255).clamp(0, 255).byte()
 
