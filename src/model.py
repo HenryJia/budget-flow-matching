@@ -201,6 +201,11 @@ class REPAModel(L.LightningModule):
         self.repa_weight = repa_weight
         self.prompt_dropout = prompt_dropout
 
+        for p in self.autoencoder.parameters():
+            p.requires_grad = False
+        for p in self.prompt_encoder.parameters():
+            p.requires_grad = False
+
         # Note: if we are using flash attention we need to ensure the model is on GPU before we run it to get the embedding for an empty prompt for classifier free guidance
         # A tad irritating but oh well
         with torch.no_grad():
@@ -222,11 +227,12 @@ class REPAModel(L.LightningModule):
         #config["num_layers"] = 20
 
         # Reduce width
-        config["num_attention_heads"] = 12
-        config["attention_head_dim"] = 64
-        config["cross_attention_dim"] = 768
-        config["num_cross_attention_heads"] = 12
-        config["cross_attention_head_dim"] = 64
+        config["num_attention_heads"] = 24
+        config["attention_head_dim"] = 48
+
+        config["cross_attention_dim"] = 1152
+        config["num_cross_attention_heads"] = 24
+        config["cross_attention_head_dim"] = 48
 
         config["caption_channels"] = prompt_dim
 
