@@ -1,4 +1,5 @@
 import gc
+from typing import Any
 import torch
 import math
 import torch.nn as nn
@@ -254,7 +255,7 @@ class REPAModel(L.LightningModule):
 
         #self.flow_net = REPATransformer2DModel.from_config(config)
         self.flow_net = REPATransformer2DModel(repa_dim=repa_dim, repa_layer=repa_layer, **config)
-        self.flow_net.set_attention_backend("flash") # Use FlashAttention 2
+        #self.flow_net.set_attention_backend("flash") # Use FlashAttention 2
 
         self.fid_metric = FrechetInceptionDistance(
             feature=2048, input_img_size=(3, self.latent_dim[0] * 32, self.latent_dim[1] * 32),
@@ -278,6 +279,7 @@ class REPAModel(L.LightningModule):
 
             # Unlike diffusion models, our timestep is continuous in [0, 1]
             t = torch.rand(size=(x_1.shape[0],), device=x_1.device, dtype=x_1.dtype)
+            t = t.clamp(1e-4, 1.0 - 1e-4) # For stability
 
             # Note: Unlike diffusion models, x_1 is the data and x_0 is our prior distribution (which is N(0, I))
             x_0 = torch.randn_like(x_1)
@@ -314,7 +316,7 @@ class REPAModel(L.LightningModule):
             with torch.no_grad():
                 repa_target = batch['repa_embedding'].to(dtype=self.dtype)
     
-            repa_loss = 1 - F.cosine_similarity(repa_state, repa_target.detach(), dim=-1)
+            repa_loss = 1 - F.cosine_similarity(repa_state, repa_target.detach(), dim=-1, eps=1e-5)
             repa_loss = self.repa_weight * repa_loss.mean()
 
             self.log("repa_loss", repa_loss, prog_bar=True)
@@ -395,7 +397,7 @@ class REPAModel(L.LightningModule):
 
     def configure_optimizers(self):
         # Just use Adam and call it a day
-        optimizer = torch.optim.Adam(self.flow_net.parameters(), lr=self.lr)
+        optimizer = torch.optim.Adam(self.flow_net.parameters(), lr=self.lr, eps=1e-5)
         return optimizer
 
     # Note, we often want to pause and continue training with different learning rates

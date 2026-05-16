@@ -4,9 +4,10 @@ import warnings
 #warnings.filterwarnings("ignore", category=ResourceWarning) # Suppress resource warnings from the dataset
 
 import torch
-torch.set_float32_matmul_precision('medium')
-torch.backends.cudnn.benchmark = True
-torch.backends.cudnn.deterministic = False
+torch.set_float32_matmul_precision('highest')
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+
 import torch.utils.data as data
 import torchvision as tv
 from torch.optim.swa_utils import get_ema_avg_fn
@@ -69,8 +70,8 @@ if __name__ == "__main__":
             dataset = datasets[0]
 
         prompt_encoder = PromptEncoderWrapper(
-            encoder=AutoModel.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
-            tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", attn_implementation="flash_attention_2", dtype=torch.bfloat16),
+            encoder=AutoModel.from_pretrained("google/gemma-3-270m", dtype=torch.bfloat16),
+            tokeniser=AutoTokenizer.from_pretrained("google/gemma-3-270m", dtype=torch.bfloat16),
         )
 
         # plus 2 so our model knows the height and width of the image
@@ -196,8 +197,11 @@ if __name__ == "__main__":
             devices=run.config['gpus'],
             accumulate_grad_batches=run.config['accumulate_grad_batches'],
             callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
+            detect_anomaly=True,
+            num_sanity_val_steps=0,
+            benchmark=False
             #reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
-            strategy=DDPStrategy(find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
+            #strategy=DDPStrategy()#find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
             )
 
         trainer.fit(model, dataloader, val_dataloaders=val_dataloader, ckpt_path=args.continue_from)

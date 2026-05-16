@@ -1,17 +1,17 @@
 name:
   description: The name of the run, used saving checkpoints and samples locally
   type: str
-  value: "pd12m"
+  value: "coco-test"
 
 dataset:
   description: The dataset to use for training
   type: str
-  value: "../pd12m"
+  value: "../../coco/"
 
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 64 # Saturates 2 RTX 3090s
+  value: 8
 accumulate_grad_batches:
   description: The number of batches to accumulate gradients for before performing an optimizer step. Effective batch size = batchsize * accumulate_grad_batches
   type: int
@@ -25,7 +25,7 @@ epochs:
 gpus:
   description: The number of GPUs to use for training
   type: int
-  value: 2
+  value: 1
 
 repa_weight:
   description: The weight to give to the REPA loss

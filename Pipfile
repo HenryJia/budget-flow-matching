@@ -4,8 +4,8 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [[source]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
 verify_ssl = true
 
 [packages]
@@ -13,24 +13,25 @@ psutil = "*"
 numpy = "*"
 scipy = "*"
 pandas = "*"
-torch = {version = "==2.10.0+cu130", index = "pytorch-cu130"}
-torchvision = {version = "*", index = "pytorch-cu130"}
-lightning = "*"
-torchmetrics = "*"
+triton-rocm = {version = "==3.7.0", index = "pytorch-rocm"}
+torch = {version = "==2.12.0+rocm7.2", index = "pytorch-rocm"}
+torchvision = {version = "==0.27.0+rocm7.2", index = "pytorch-rocm"}
+lightning = "==2.6.1"
+torchmetrics = "==1.9.0"
 torch-fidelity = "*"
 wandb = "*"
 gdown = "*"
 rich = "*"
-diffusers = "*"
-datasets = "*"
-transformers = "*"
+diffusers = "==0.38.0"
+datasets = "==4.8.4"
+transformers = "==5.8.1"
 sentence-transformers = "*"
 ninja = "*"
-flash-attn = {file = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.7.16/flash_attn-2.8.3%2Bcu130torch2.10-cp314-cp314-linux_x86_64.whl"}
+#flash-attn = {file = "https://github.com/HenryJia/ML-helpers/raw/main/flash-attention/rocm7.2/flash_attn-2.8.3-py3-none-any.whl"}
 torchdiffeq = "*"
 webdataset = "*"
 
 [requires]
-python_version = "3.14"
+python_version = "3.12"
 
 [dev-packages]
