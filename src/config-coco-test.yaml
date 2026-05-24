@@ -11,7 +11,7 @@ dataset:
 batchsize:
   description: The batch size to use for the dataloader
   type: int
-  value: 8
+  value: 32
 accumulate_grad_batches:
   description: The number of batches to accumulate gradients for before performing an optimizer step. Effective batch size = batchsize * accumulate_grad_batches
   type: int

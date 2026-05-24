@@ -197,11 +197,10 @@ if __name__ == "__main__":
             devices=run.config['gpus'],
             accumulate_grad_batches=run.config['accumulate_grad_batches'],
             callbacks=[checkpoint_callback, sample_callback, lr_monitor, ema_callback, pb_callback],
-            detect_anomaly=True,
             num_sanity_val_steps=0,
             benchmark=False
             #reload_dataloaders_every_n_epochs=1, # Make sure to shuffle the dataset at every epoch
-            #strategy=DDPStrategy()#find_unused_parameters=True) # Need this because the Autoencoder decoder isn't used in the reverse diffusion process
+            #strategy=DDPStrategy() # Single GPU for testing ROCm
             )
 
         trainer.fit(model, dataloader, val_dataloaders=val_dataloader, ckpt_path=args.continue_from)
